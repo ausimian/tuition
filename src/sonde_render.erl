@@ -3,7 +3,7 @@
 %%%
 %%% The renderer is immediate-mode, the ratatui model the PRD calls for (§8):
 %%% every frame is rebuilt from scratch into a fresh {@type buffer()} of
-%%% {@link //sonde_core/sonde_term:size()} cells, then {@link diff/2} compares it
+%%% {@link //sonde_tui/sonde_term:size()} cells, then {@link diff/2} compares it
 %%% against the buffer currently on screen and emits ANSI for *only* the cells
 %%% that changed. The caller keeps the last buffer as the next frame's baseline:
 %%% ```
@@ -35,11 +35,11 @@
 %%% default SGR before it returns (a trailing `ESC [ 0 m' iff it left a styled
 %%% run active). Successive diffs therefore compose without the style of one
 %%% frame bleeding into the next. Cursor visibility and the alternate screen are
-%%% the backend's responsibility ({@link //sonde_core/sonde_term_local}), not
+%%% the backend's responsibility ({@link //sonde_tui/sonde_term_local}), not
 %%% the renderer's.
 %%%
 %%% == Column width (§8, issue #5) ==
-%%% Column advance uses {@link //sonde_core/sonde_width:width/1}, never the
+%%% Column advance uses {@link //sonde_tui/sonde_width:width/1}, never the
 %%% codepoint count: a wide (East-Asian / emoji) glyph occupies two columns. Its
 %%% left cell holds the glyph and the cell to its right is a `wide_cont'
 %%% placeholder that is never emitted on its own — it is painted by the two-wide
@@ -107,9 +107,9 @@
 
 %%% -- construction ----------------------------------------------------
 
-%% @doc A blank buffer covering a terminal size or a {@link //sonde_core/sonde_layout:rect()}.
+%% @doc A blank buffer covering a terminal size or a {@link //sonde_tui/sonde_layout:rect()}.
 %%
-%% Every cell starts as the default blank ({@link //sonde_core/sonde_term} `#cell{}':
+%% Every cell starts as the default blank ({@link //sonde_tui/sonde_term} `#cell{}':
 %% a space with default colours). A rect's origin is ignored — a buffer always
 %% spans the whole terminal in absolute coordinates; draw into a sub-rect by
 %% passing its absolute origin to {@link put_text/4}.
@@ -119,7 +119,7 @@ new({Cols, Rows}) when is_integer(Cols), is_integer(Rows) ->
 new(#rect{w = W, h = H}) ->
     #buf{w = W, h = H}.
 
-%% @doc The buffer's size in cells, as a {@link //sonde_core/sonde_term:size()} pair.
+%% @doc The buffer's size in cells, as a {@link //sonde_tui/sonde_term:size()} pair.
 -spec size(buffer()) -> {non_neg_integer(), non_neg_integer()}.
 size(#buf{w = W, h = H}) -> {W, H}.
 
@@ -208,7 +208,7 @@ draw_clusters(_GCs, _W, _X, Row, _Base) ->
 %%
 %% Both buffers are assumed to share the same geometry (on resize the caller
 %% starts from a fresh blank buffer). The result is `iodata()' ready for
-%% {@link //sonde_core/sonde_term:write/2}: empty when the frames are identical,
+%% {@link //sonde_tui/sonde_term:write/2}: empty when the frames are identical,
 %% otherwise the minimal cursor moves, SGR changes and glyph bytes for the
 %% changed cells, ending at default SGR.
 -spec diff(buffer(), buffer()) -> iodata().

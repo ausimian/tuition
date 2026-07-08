@@ -9,7 +9,7 @@
 %%% (mock) processes — the shape of the etop/observer-parity process view (PRD
 %%% §9.1) the Phase 1 panes will grow into. It proves the seam composes with the
 %%% real {@link sonde_render} diff renderer, {@link sonde_layout} split, and an
-%%% immediate-mode input loop — the same shape as {@link sonde_core}'s Phase 0
+%%% immediate-mode input loop — the same shape as {@link sonde_tui_demo}'s Phase 0
 %%% loop, so the two sit side by side rather than one replacing the other.
 %%%
 %%% == Running it ==
@@ -225,7 +225,7 @@ demo_rows() ->
         "sasl_sup",
         "release_handler",
         "sonde_agent",
-        "sonde_core",
+        "sonde_tui_demo",
         "gen_event",
         "supervisor_bridge",
         "pg",

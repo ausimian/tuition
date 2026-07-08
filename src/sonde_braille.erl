@@ -17,7 +17,7 @@
 %%% and {@link render_into/2} composites it into the buffer.
 %%%
 %%% == Coordinates ==
-%%% A grid is sized by a {@link //sonde_core/sonde_layout:rect()} of `W'×`H'
+%%% A grid is sized by a {@link //sonde_tui/sonde_layout:rect()} of `W'×`H'
 %%% cells, giving a sub-pixel field `2W' wide and `4H' tall. Sub-pixel `{GX, GY}'
 %%% has its origin top-left, `GX' increasing rightward and `GY' downward — the
 %%% same orientation as the cell buffer, so a caller mapping a value to a row

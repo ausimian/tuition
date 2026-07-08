@@ -66,7 +66,7 @@
 %% shell:start_interactive/1 is spec'd `ok | {error, already_started}' upstream,
 %% but at runtime it also returns `{error, enotsup}' on a host with no
 %% controlling tty (headless CI, `erl -noshell' with redirected stdio) — see the
-%% `{error, _}' clause and the enotsup path in sonde_core_tests. dialyzer trusts
+%% `{error, _}' clause and the enotsup path in sonde_tui_demo_tests. dialyzer trusts
 %% OTP's narrower spec and flags that clause as unreachable, so silence just this
 %% false positive (no_match), not all of open/1.
 -dialyzer({no_match, open/1}).

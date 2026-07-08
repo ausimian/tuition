@@ -43,13 +43,20 @@ apply_events([Event | Rest], St) ->
 %% Normal mode: `q' quits (the shell honours a pane-declared quit), `/' opens the
 %% filter, Down/`j' and Up/`k' move the selection. Filter mode: printable keys
 %% (including `q') are captured as text, Esc leaves. Everything else is a no-op.
-event({key, {char, $q}, []}, #st{mode = normal}) -> quit;
-event({key, {char, $/}, []}, #st{mode = normal} = St) -> {ok, St#st{mode = filter}};
-event({key, down, _}, #st{mode = normal} = St) -> {ok, St#st{sel = St#st.sel + 1}};
-event({key, {char, $j}, []}, #st{mode = normal} = St) -> {ok, St#st{sel = St#st.sel + 1}};
-event({key, up, _}, #st{mode = normal} = St) -> {ok, St#st{sel = max(0, St#st.sel - 1)}};
-event({key, {char, $k}, []}, #st{mode = normal} = St) -> {ok, St#st{sel = max(0, St#st.sel - 1)}};
-event({key, esc, _}, #st{mode = filter} = St) -> {ok, St#st{mode = normal, filter = <<>>}};
+event({key, {char, $q}, []}, #st{mode = normal}) ->
+    quit;
+event({key, {char, $/}, []}, #st{mode = normal} = St) ->
+    {ok, St#st{mode = filter}};
+event({key, down, _}, #st{mode = normal} = St) ->
+    {ok, St#st{sel = St#st.sel + 1}};
+event({key, {char, $j}, []}, #st{mode = normal} = St) ->
+    {ok, St#st{sel = St#st.sel + 1}};
+event({key, up, _}, #st{mode = normal} = St) ->
+    {ok, St#st{sel = max(0, St#st.sel - 1)}};
+event({key, {char, $k}, []}, #st{mode = normal} = St) ->
+    {ok, St#st{sel = max(0, St#st.sel - 1)}};
+event({key, esc, _}, #st{mode = filter} = St) ->
+    {ok, St#st{mode = normal, filter = <<>>}};
 event({key, {char, C}, []}, #st{mode = filter} = St) ->
     {ok, St#st{filter = <<(St#st.filter)/binary, C>>}};
 event(_Other, St) ->

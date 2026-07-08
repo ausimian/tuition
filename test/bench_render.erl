@@ -17,7 +17,7 @@
 %%%     common interactive case (a cursor blink, a counter tick) — the full scan
 %%%     plus one cursor move and one glyph.
 %%%   * `wide'        — `diff(blank, cjk_frame)': a frame of two-column CJK/emoji
-%%%     glyphs, exercising the {@link //sonde_core/sonde_width} column-advance on
+%%%     glyphs, exercising the {@link //sonde_tui/sonde_width} column-advance on
 %%%     the render path (issue #5) far harder than the ASCII dashboard.
 %%%
 %%% Legacy `rebar3_bench' callbacks: each `NAME/1' prepares the (cached) input
