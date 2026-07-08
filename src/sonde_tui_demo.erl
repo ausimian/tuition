@@ -1,0 +1,346 @@
+%%%-------------------------------------------------------------------
+%%% @doc "Hello, world" reference loop — the framework's smallest end-to-end
+%%% example, and the living exercise of the capability probe.
+%%%
+%%% This is the minimal immediate-mode loop a `sonde_tui' consumer starts from: it
+%%% opens a pluggable {@link sonde_term} backend, probes its capabilities, and
+%%% paints a single "hello, world" pane, folding input and resize into the frame
+%%% each iteration. It began as the Phase 0 exit criterion (PRD §13, issue #8);
+%%% after the framework was split out it stays here as the reference demo and the
+%%% only place the caps-probe integration is exercised end-to-end. The full app
+%%% shell ({@link sonde_shell}) and the Sonde observer ({@link //sonde/sonde})
+%%% supersede it as the product entry points.
+%%%
+%%% == The render/input loop ==
+%%% {@link start/1} opens a terminal backend, probes its capabilities
+%%% ({@link sonde_caps}), paints a "hello, world" pane laid out by
+%%% {@link sonde_layout}, then runs an immediate-mode loop: each iteration polls
+%%% input through {@link sonde_input_driver}, folds the decoded events (keys,
+%%% mouse, paste) plus any terminal resize into the UI state, rebuilds the frame
+%%% with {@link sonde_render} and writes only the diff. It quits on `q' (or
+%%% Ctrl-C) and always restores the terminal via {@link sonde_term:close/1} — on a
+%%% clean quit or a read/write error alike — so the shell is left pristine.
+%%%
+%%% The probe runs once, right after the backend opens and before the first
+%%% frame, reading its replies off the same input channel the loop later uses.
+%%% Its result drives real output here: the pane is drawn in 24-bit colour on a
+%%% truecolor terminal and falls back to a 256-colour approximation otherwise,
+%%% and the status line names the enrichments the terminal reported. Because the
+%%% probe shares the input channel, any non-reply bytes it reads (a key pressed
+%%% during the probe window) are preserved and replayed as the loop's first input
+%%% rather than lost — so, e.g., a quick `q' against a silent terminal still quits.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(sonde_tui_demo).
+
+-include("sonde_layout.hrl").
+-include("sonde_caps.hrl").
+
+-export([start/0, start/1]).
+
+%% How long a quiet input poll waits before looping to re-check the terminal
+%% size (resize is polled here, not signal-driven, in Phase 0). This is only a
+%% liveness cadence: an idle poll that finds nothing changed writes nothing,
+%% because the diff of an unchanged frame is empty.
+-define(IDLE_TIMEOUT, 1000).
+
+%% Full-screen erase, emitted ahead of a paint onto a fresh (blank) baseline —
+%% the first frame and every post-resize repaint — so no stale cell from a prior
+%% geometry can survive underneath the newly drawn frame.
+-define(ERASE, <<"\e[2J">>).
+
+%% A loop-level event: either a decoded input event from the byte parser, or a
+%% terminal resize the loop synthesises when the polled size changes. Resize does
+%% not arrive through the byte stream (PRD §8), so it is folded in here rather
+%% than in {@link sonde_input}.
+-type ui_event() :: sonde_input:event() | {resize, sonde_term:size()}.
+
+%% Minimal Phase 0 UI state: the terminal capabilities probed at startup (which
+%% style the frame) and the most recent event — key, mouse, paste or resize —
+%% echoed into the status line so the input -> parse -> render pipeline is visibly
+%% end-to-end. Later phases replace `last' with real view state; `caps' stays.
+-record(ui, {
+    caps = #caps{} :: sonde_caps:caps(),
+    last = none :: none | ui_event()
+}).
+
+%% @doc Start the demo against the local node, using the default local
+%% terminal backend. Blocks until the user quits; returns `ok' once the terminal
+%% has been restored, or `{error, Reason}' if the backend could not be opened
+%% (e.g. no controlling tty, or a shell already owns it).
+-spec start() -> ok | {error, term()}.
+start() -> start(#{}).
+
+%% @doc As {@link start/0}, with options. `backend' selects the terminal backend
+%% module (default {@link sonde_term_local}); the whole `Opts' map is passed
+%% through to the backend's `open/1', so a backend reads its own keys from it.
+%% Selecting a backend this way is also how the loop is driven in tests.
+-spec start(Opts :: map()) -> ok | {error, term()}.
+start(Opts) ->
+    Backend = maps:get(backend, Opts, sonde_term_local),
+    case sonde_term:open(Backend, Opts) of
+        {ok, Handle} ->
+            try
+                run(Handle)
+            after
+                sonde_term:close(Handle)
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%%% -- render/input loop -----------------------------------------------
+
+%% Probe capabilities, then paint the first frame and hand off to the poll loop.
+%% The probe reads its replies off the input channel before the loop starts, so
+%% there is no contention. Any non-reply bytes it read back (a key pressed during
+%% the probe window) are decoded up front and replayed as the loop's first input
+%% batch, seeding its parser state, so an early keystroke is honoured rather than
+%% lost. The first frame is drawn onto a blank baseline behind a full-screen
+%% erase, so every non-blank cell of the pane lands on a guaranteed-clean
+%% alternate screen.
+-spec run(sonde_term:handle()) -> ok | {error, term()}.
+run(Handle) ->
+    {Caps, Residue} = probe_caps(Handle),
+    {Events0, InputSt0} = sonde_input:parse(Residue, sonde_input:new()),
+    Ui = #ui{caps = Caps},
+    case sonde_term:size(Handle) of
+        {ok, Size} ->
+            Frame = build_frame(Size, Ui),
+            Out = [?ERASE | sonde_render:diff(sonde_render:new(Size), Frame)],
+            case sonde_term:write(Handle, Out) of
+                ok -> resume(Handle, Frame, Size, InputSt0, Ui, Events0);
+                {error, _} = Error -> Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% Apply any input recovered from the probe window as the first batch — so a key
+%% pressed before the probe finished is honoured, not lost — then enter the poll
+%% loop. With no recovered input (the common case) `Events' is empty and this is
+%% a straight hand-off after an empty repaint.
+-spec resume(
+    sonde_term:handle(),
+    sonde_render:buffer(),
+    sonde_term:size(),
+    sonde_input:state(),
+    #ui{},
+    [sonde_input:event()]
+) -> ok | {error, term()}.
+resume(Handle, Prev, Size, InputSt, Ui, Events) ->
+    case apply_events(Events, Ui) of
+        quit ->
+            ok;
+        {ok, Ui1} ->
+            case render(Handle, Prev, Size, Size, Ui1) of
+                {ok, Prev1} -> loop(Handle, Prev1, Size, InputSt, Ui1);
+                {error, _} = Error -> Error
+            end
+    end.
+
+%% Probe the terminal, then fold in the `COLORTERM' environment hint: some
+%% terminals advertise 24-bit colour through that variable but do not answer the
+%% DECRQSS truecolor probe. The reply-based probe stays a pure function of the
+%% terminal ({@link sonde_caps:probe/1}); reading the environment is the host's
+%% job, so it happens here rather than inside the probe. Returns `{Caps, Residue}':
+%% any non-reply bytes the probe read (a key pressed during the probe window) are
+%% passed back so {@link run/1} can replay them instead of dropping the keystroke.
+-spec probe_caps(sonde_term:handle()) -> {sonde_caps:caps(), binary()}.
+probe_caps(Handle) ->
+    {Caps, Residue} = sonde_caps:probe(Handle),
+    {sonde_caps:apply_colorterm(os:getenv("COLORTERM"), Caps), Residue}.
+
+%% One iteration: poll input, re-query the terminal size (cheap, and the only
+%% resize signal in Phase 0), fold both the decoded events and any synthesised
+%% resize event into the UI state, then repaint the diff. `Prev'/`PrevSize' are
+%% the baseline the next diff is measured against; `InputSt' carries any partial
+%% escape/UTF-8/paste sequence across reads.
+-spec loop(
+    sonde_term:handle(),
+    sonde_render:buffer(),
+    sonde_term:size(),
+    sonde_input:state(),
+    #ui{}
+) -> ok | {error, term()}.
+loop(Handle, Prev, PrevSize, InputSt, Ui) ->
+    case sonde_input_driver:poll(Handle, InputSt, ?IDLE_TIMEOUT) of
+        {ok, Events, InputSt1} ->
+            case sonde_term:size(Handle) of
+                {ok, Size} ->
+                    AllEvents = Events ++ resize_events(PrevSize, Size),
+                    case apply_events(AllEvents, Ui) of
+                        quit ->
+                            ok;
+                        {ok, Ui1} ->
+                            case render(Handle, Prev, PrevSize, Size, Ui1) of
+                                {ok, Prev1} -> loop(Handle, Prev1, Size, InputSt1, Ui1);
+                                {error, _} = Error -> Error
+                            end
+                    end;
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% Synthesise a resize event when the polled size differs from the previous
+%% iteration's — a structured `{resize, Size}' the loop consumes like any other
+%% event (PRD §8). No change yields no event, so a steady terminal is silent.
+-spec resize_events(sonde_term:size(), sonde_term:size()) -> [ui_event()].
+resize_events(Size, Size) -> [];
+resize_events(_PrevSize, Size) -> [{resize, Size}].
+
+%% Repaint for the known current `Size': rebuild the frame and write the diff
+%% against the baseline. When the geometry changed (`Size' =/= `PrevSize') the
+%% baseline is reset to blank behind a full-screen erase, so stale cells from the
+%% old geometry never linger; otherwise it diffs against `Prev'. An unchanged
+%% frame writes nothing.
+-spec render(
+    sonde_term:handle(), sonde_render:buffer(), sonde_term:size(), sonde_term:size(), #ui{}
+) ->
+    {ok, sonde_render:buffer()} | {error, term()}.
+render(Handle, Prev, PrevSize, Size, Ui) ->
+    {Baseline, Lead} =
+        case Size =:= PrevSize of
+            true -> {Prev, []};
+            false -> {sonde_render:new(Size), [?ERASE]}
+        end,
+    Frame = build_frame(Size, Ui),
+    case sonde_term:write(Handle, [Lead | sonde_render:diff(Baseline, Frame)]) of
+        ok -> {ok, Frame};
+        {error, _} = Error -> Error
+    end.
+
+%% Fold events into the UI state in arrival order, short-circuiting to `quit' the
+%% moment a quit key (unmodified `q', or Ctrl-C) is seen. Every other event — key,
+%% mouse, paste or resize — just becomes the "last" the status line echoes.
+-spec apply_events([ui_event()], #ui{}) -> {ok, #ui{}} | quit.
+apply_events([], Ui) ->
+    {ok, Ui};
+apply_events([Event | Rest], Ui) ->
+    case is_quit(Event) of
+        true -> quit;
+        false -> apply_events(Rest, Ui#ui{last = Event})
+    end.
+
+%% Ctrl-C quits too: in raw mode it arrives as a key event (byte 0x03), not a
+%% signal, so without this a user's reflex to bail would do nothing. Mouse, paste
+%% and resize events never quit.
+-spec is_quit(ui_event()) -> boolean().
+is_quit({key, {char, $q}, []}) -> true;
+is_quit({key, {ctrl, $c}, _Mods}) -> true;
+is_quit(_Event) -> false.
+
+%%% -- frame building --------------------------------------------------
+
+%% Build the whole frame for the current size: a centred "hello, world" body
+%% pane above a one-row status line, tiled by the layout engine. Both panes are
+%% styled from the probed capabilities.
+-spec build_frame(sonde_term:size(), #ui{}) -> sonde_render:buffer().
+build_frame(Size, #ui{caps = Caps, last = Last}) ->
+    [Body, Status] = sonde_layout:split(vertical, [fill, {fixed, 1}], sonde_layout:area(Size)),
+    Buf0 = sonde_render:new(Size),
+    Buf1 = draw_hello(Buf0, Body, Caps),
+    draw_status(Buf1, Status, Caps, Last).
+
+%% Centre "hello, world" (bold) within the body rect, coloured from the probed
+%% capabilities (see hello_style/1). The text is ASCII, so its column width equals
+%% its length; centring clamps at the left edge for a narrow pane, and put_text
+%% clips anything past the right edge. An empty pane (no rows or columns — e.g.
+%% the body rect on a one-row terminal, where the status line takes the only row)
+%% draws nothing, so the body never bleeds onto the row the layout reserved for
+%% something else.
+-spec draw_hello(sonde_render:buffer(), #rect{}, sonde_caps:caps()) -> sonde_render:buffer().
+draw_hello(Buf, #rect{w = W, h = H}, _Caps) when W =< 0; H =< 0 ->
+    Buf;
+draw_hello(Buf, #rect{x = X, y = Y, w = W, h = H}, Caps) ->
+    Text = "hello, world",
+    Cx = X + max(0, (W - length(Text)) div 2),
+    Cy = Y + H div 2,
+    sonde_render:put_text(Buf, Cx, Cy, Text, hello_style(Caps)).
+
+%% Pick the hello pane's style from the capabilities: a truecolor terminal gets a
+%% 24-bit RGB foreground, everything else a 256-colour approximation of the same
+%% hue. This is the visible proof that capability probing drives real output.
+-spec hello_style(sonde_caps:caps()) -> sonde_render:style().
+hello_style(#caps{truecolor = true}) -> #{bold => true, fg => {rgb, 64, 224, 208}};
+hello_style(#caps{truecolor = false}) -> #{bold => true, fg => 6}.
+
+%% Draw the status line at the pane's origin: the quit hint, the capabilities the
+%% probe reported, and the last key pressed, in a dim colour so it reads as chrome
+%% rather than content. Skips an empty rect for the same reason as draw_hello, so
+%% a degenerate layout can't clobber a neighbouring pane.
+-spec draw_status(sonde_render:buffer(), #rect{}, sonde_caps:caps(), none | sonde_input:event()) ->
+    sonde_render:buffer().
+draw_status(Buf, #rect{w = W, h = H}, _Caps, _Last) when W =< 0; H =< 0 ->
+    Buf;
+draw_status(Buf, #rect{x = X, y = Y}, Caps, Last) ->
+    Text = ["press q to quit    caps: ", caps_tags(Caps), "    last: ", describe(Last)],
+    sonde_render:put_text(Buf, X, Y, Text, #{fg => 8}).
+
+%% A space-separated list of the enrichments the probe turned on, or "baseline"
+%% when it found none — so the running app visibly reports what the terminal
+%% supports (PRD §8 acceptance).
+-spec caps_tags(sonde_caps:caps()) -> string().
+caps_tags(#caps{
+    truecolor = Tc,
+    sync_output = Sy,
+    bracketed_paste = Bp,
+    sgr_mouse = Sm,
+    kitty_keyboard = Kk
+}) ->
+    Tags = [
+        Tag
+     || {true, Tag} <- [
+            {Tc, "truecolor"},
+            {Sy, "sync"},
+            {Bp, "paste"},
+            {Sm, "mouse"},
+            {Kk, "kitty"}
+        ]
+    ],
+    case Tags of
+        [] -> "baseline";
+        _ -> lists:flatten(lists:join(" ", Tags))
+    end.
+
+%% A short human label for the last event, for the status line. Modifiers become
+%% a prefix (`C-', `A-', ...); a control chord already implies Ctrl, so it is
+%% rendered from its base letter alone. Mouse reports show action/button and the
+%% 1-based cell, a paste its byte count, a resize the new geometry.
+-spec describe(none | ui_event()) -> string().
+describe(none) ->
+    "(none)";
+describe({key, {char, C}, Mods}) ->
+    mods(Mods) ++ [C];
+describe({key, {ctrl, C}, _Mods}) ->
+    "C-" ++ [upper(C)];
+describe({key, {f, N}, Mods}) ->
+    mods(Mods) ++ [$F | integer_to_list(N)];
+describe({key, Named, Mods}) when is_atom(Named) -> mods(Mods) ++ atom_to_list(Named);
+describe({mouse, Action, Button, {Col, Row}, Mods}) ->
+    mods(Mods) ++ atom_to_list(Action) ++ "-" ++ button_label(Button) ++
+        "@" ++ integer_to_list(Col) ++ "," ++ integer_to_list(Row);
+describe({paste, Bytes}) ->
+    "paste(" ++ integer_to_list(byte_size(Bytes)) ++ "B)";
+describe({resize, {Cols, Rows}}) ->
+    "resize " ++ integer_to_list(Cols) ++ "x" ++ integer_to_list(Rows).
+
+-spec button_label(sonde_input:mouse_button()) -> string().
+button_label({button, N}) -> "btn" ++ integer_to_list(N);
+button_label(Button) when is_atom(Button) -> atom_to_list(Button).
+
+-spec mods([sonde_input:mod()]) -> string().
+mods(Mods) -> lists:append([mod_prefix(M) || M <- Mods]).
+
+-spec mod_prefix(sonde_input:mod()) -> string().
+mod_prefix(shift) -> "S-";
+mod_prefix(alt) -> "A-";
+mod_prefix(ctrl) -> "C-";
+mod_prefix(meta) -> "M-".
+
+-spec upper(char()) -> char().
+upper(C) when C >= $a, C =< $z -> C - 32;
+upper(C) -> C.
