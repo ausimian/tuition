@@ -515,12 +515,13 @@ setup_pane(Module) ->
         false -> none
     end.
 
-%% Release every acquired resource, unwinding in reverse acquisition order. That
-%% ordering matters when panes share a process-global resource: two panes that each
-%% toggle `scheduler_wall_time', say, acquire the prior-value tokens `false' then
-%% `true', and only restoring newest-first (`true' then `false') lands the flag back
-%% on its pre-setup value — a forward teardown would leave it enabled. Guarded by
-%% the caller's `after', so this runs on a clean quit and a crash alike.
+%% Release every acquired resource, unwinding in reverse acquisition order — the
+%% conventional stack discipline for nested resources, so a pane is torn down before
+%% anything it was set up on top of. (Shared node-global resources like the
+%% `scheduler_wall_time' flag are now ref-counted by their owner, so their final state
+%% no longer depends on this order; reverse order remains the right default for
+%% resources that genuinely nest.) Guarded by the caller's `after', so this runs on a
+%% clean quit and a crash alike.
 -spec teardown_panes([pane_resource()]) -> ok.
 teardown_panes(Resources) ->
     teardown_each(lists:reverse(Resources)).
