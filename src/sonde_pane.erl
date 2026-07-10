@@ -34,7 +34,13 @@
 %%%       short-circuiting to `quit' when the pane decides the app should exit (an
 %%%       unmodified `q' in most panes — but <em>not</em>, say, while a text field
 %%%       has focus). The shell peels its own global keys (pane switch, Ctrl-C quit)
-%%%       off first, so a pane only ever sees the keys meant for it.</li>
+%%%       off first, so a pane only ever sees the keys meant for it. A pane whose key
+%%%       changed <em>what the visible panes observe</em> — the node picker switching
+%%%       the active target — returns `{sample, State}' instead of `{ok, State}' to
+%%%       ask the shell to run its {@link sample/1} cycle right after this batch,
+%%%       rather than leaving the other visible panes showing the previous target's
+%%%       data until the next idle tick. Ordinary panes never need it and return
+%%%       `{ok, State}'.</li>
 %%%   <li>{@link sample/1} — refresh the state from the running node. Impure. The
 %%%       shell calls it on the idle tick for the focused pane only; a static pane
 %%%       (no live data) returns its state unchanged.</li>
@@ -81,7 +87,11 @@
 
 %% Fold a batch of input events into the state, or short-circuit to `quit'. The
 %% shell has already peeled off its own global keys, so these are the pane's.
--callback apply_events([sonde_input:event()], state()) -> {ok, state()} | quit.
+%% `{sample, State}' additionally asks the shell to run its sample cycle right after
+%% this batch — for a pane (the node picker) whose key changed what the visible panes
+%% observe, so they refresh at once rather than lagging to the next idle tick.
+-callback apply_events([sonde_input:event()], state()) ->
+    {ok, state()} | {sample, state()} | quit.
 
 %% Refresh the state from the running node (impure). A static pane returns its
 %% state unchanged.
