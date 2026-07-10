@@ -281,6 +281,144 @@ resize_repaints_on_a_fresh_erase_test() ->
     ?assert(Closed),
     ?assertEqual(2, length(binary:matches(Frames, <<"\e[2J">>))).
 
+%%% -- sidebar ---------------------------------------------------------
+%%%
+%%% The stub sidebar pane (sonde_shell_side_pane) draws "side body", counts its
+%%% samples and counts the Down keys it receives, so these assert the shell hosts a
+%%% sidebar the way the node picker needs: an always-visible left pane that joins the
+%%% one Tab ring, samples every idle tick alongside the active main pane, and takes
+%%% keys only while it holds focus.
+
+-define(SIDEBAR, #{module => sonde_shell_side_pane, title => <<"Side">>, width => 20}).
+
+sidebar_shell() -> sidebar_shell(0).
+sidebar_shell(Active) -> sonde_shell:new(?PANES, Active, #{sidebar => ?SIDEBAR}).
+
+focus_at(Shell) -> {sonde_shell:focus(Shell), sonde_shell:active(Shell)}.
+
+sidebar_starts_focused_on_the_first_main_pane_test() ->
+    S = sidebar_shell(),
+    ?assertEqual(main, sonde_shell:focus(S)),
+    ?assertEqual(0, sonde_shell:active(S)),
+    ?assertEqual(sonde_shell_pane_a, sonde_shell:focused_module(S)).
+
+tab_ring_includes_the_sidebar_as_the_leftmost_stop_test() ->
+    %% From the first main pane, Tab walks the main panes then the sidebar and back:
+    %% main0 -> main1 -> sidebar -> main0.
+    S0 = sidebar_shell(),
+    {ok, S1} = sonde_shell:apply_events([tab()], S0),
+    ?assertEqual({main, 1}, focus_at(S1)),
+    {ok, S2} = sonde_shell:apply_events([tab()], S1),
+    ?assertEqual(sidebar, sonde_shell:focus(S2)),
+    ?assertEqual(sonde_shell_side_pane, sonde_shell:focused_module(S2)),
+    {ok, S3} = sonde_shell:apply_events([tab()], S2),
+    ?assertEqual({main, 0}, focus_at(S3)).
+
+shift_tab_from_the_first_main_pane_lands_on_the_sidebar_test() ->
+    %% The sidebar is the ring's leftmost stop, so stepping back off main0 reaches it.
+    {ok, S1} = sonde_shell:apply_events([backtab()], sidebar_shell()),
+    ?assertEqual(sidebar, sonde_shell:focus(S1)).
+
+sidebar_and_active_pane_both_render_each_frame_test() ->
+    B = frame(sidebar_shell()),
+    ?assertMatch({_, _}, binary:match(B, <<"side body">>)),
+    ?assertMatch({_, _}, binary:match(B, <<"alpha body">>)),
+    %% The sidebar tab and the main tabs are all in the nav bar.
+    ?assertMatch({_, _}, binary:match(B, <<"Side">>)),
+    ?assertMatch({_, _}, binary:match(B, <<"Alpha">>)),
+    ?assertMatch({_, _}, binary:match(B, <<"Beta">>)).
+
+sample_refreshes_the_sidebar_and_the_active_pane_test() ->
+    %% Both visible panes sample each idle tick: the sidebar's counter ticks and the
+    %% active main pane populates a row.
+    S1 = sonde_shell:sample(sidebar_shell()),
+    ?assertEqual(1, sonde_shell_side_pane:samples(sonde_shell:sidebar_state(S1))),
+    ?assert(length(sonde_shell_pane_a:rows(sonde_shell:active_state(S1))) > 0).
+
+sample_still_refreshes_the_active_pane_while_the_sidebar_has_focus_test() ->
+    %% Focus on the sidebar must not stop the visible main pane from sampling — it is
+    %% still on screen next to the sidebar.
+    {ok, S1} = sonde_shell:apply_events([backtab()], sidebar_shell()),
+    ?assertEqual(sidebar, sonde_shell:focus(S1)),
+    S2 = sonde_shell:sample(S1),
+    ?assertEqual(1, sonde_shell_side_pane:samples(sonde_shell:sidebar_state(S2))),
+    ?assert(length(sonde_shell_pane_a:rows(sonde_shell:active_state(S2))) > 0).
+
+keys_route_to_the_sidebar_while_it_has_focus_test() ->
+    %% Down reaches the sidebar (its move counter ticks) and leaves the main pane's
+    %% selection untouched.
+    {ok, S1} = sonde_shell:apply_events([backtab()], sidebar_shell()),
+    {ok, S2} = sonde_shell:apply_events([{key, down, []}], S1),
+    ?assertEqual(1, sonde_shell_side_pane:moved(sonde_shell:sidebar_state(S2))),
+    ?assertEqual(0, sonde_shell_pane_a:selection(sonde_shell:active_state(S2))).
+
+keys_route_to_the_main_pane_while_it_has_focus_test() ->
+    %% With focus on the main pane, Down moves the main pane and not the sidebar.
+    {ok, S1} = sonde_shell:apply_events([{key, down, []}], sidebar_shell()),
+    ?assertEqual(1, sonde_shell_pane_a:selection(sonde_shell:active_state(S1))),
+    ?assertEqual(0, sonde_shell_side_pane:moved(sonde_shell:sidebar_state(S1))).
+
+status_right_is_shown_on_the_status_line_test() ->
+    S = sonde_shell:new(?PANES, 0, #{
+        sidebar => ?SIDEBAR, status_right => fun() -> <<"app@host">> end
+    }),
+    B = frame(S),
+    ?assertMatch({_, _}, binary:match(B, <<"app@host">>)),
+    %% The global keys are still on the left.
+    ?assertMatch({_, _}, binary:match(B, <<"switch pane">>)).
+
+sidebar_tiny_terminal_does_not_crash_test() ->
+    S = sonde_shell:new(?PANES, 0, #{
+        sidebar => ?SIDEBAR, status_right => fun() -> <<"x">> end
+    }),
+    ?assertMatch({_, _}, sonde_shell:build_frame({4, 3}, S)),
+    ?assertMatch({_, _}, sonde_shell:build_frame({1, 1}, S)),
+    ?assertMatch({_, _}, sonde_shell:build_frame({20, 2}, S)).
+
+sidebar_renders_in_the_running_loop_test() ->
+    %% End-to-end over the scripted backend: the sidebar and its tab both paint, and
+    %% Ctrl-C quits (the sidebar has no quit binding of its own).
+    Opts = #{
+        backend => sonde_loop_term,
+        sink => self(),
+        size => ?BIG,
+        script => [{ok, <<3>>}],
+        sidebar => ?SIDEBAR
+    },
+    ?assertEqual(ok, sonde_shell:start(?PANES, Opts)),
+    {Frames, Closed} = drain(<<>>, false),
+    ?assert(Closed),
+    ?assertMatch({_, _}, binary:match(Frames, <<"side body">>)),
+    ?assertMatch({_, _}, binary:match(Frames, <<"Side">>)).
+
+sidebar_sample_request_forces_a_sample_off_a_keystroke_test() ->
+    %% The stub sidebar's Enter returns {sample, St} (the picker's target switch).
+    %% That must make the shell run its sample cycle off the keystroke — not wait for
+    %% an idle tick — so the active main pane refreshes at once (its stub sample
+    %% populates a row). A plain navigation key must NOT force a sample.
+    {ok, OnSidebar} = sonde_shell:apply_events([backtab()], sidebar_shell()),
+    ?assertEqual(sidebar, sonde_shell:focus(OnSidebar)),
+    %% A non-switch key: no forced sample (a keystroke, and no request armed).
+    {ok, Nav} = sonde_shell:apply_events([{key, down, []}], OnSidebar),
+    Nav1 = sonde_shell:maybe_sample([{key, down, []}], sonde_input:new(), Nav),
+    ?assertEqual([], sonde_shell_pane_a:rows(sonde_shell:active_state(Nav1))),
+    %% Enter arms the request: the active main pane samples despite the keystroke.
+    {ok, Switched} = sonde_shell:apply_events([{key, enter, []}], OnSidebar),
+    Switched1 = sonde_shell:maybe_sample([{key, enter, []}], sonde_input:new(), Switched),
+    ?assert(length(sonde_shell_pane_a:rows(sonde_shell:active_state(Switched1))) > 0).
+
+sidebar_is_set_up_and_torn_down_with_the_main_panes_test() ->
+    %% The sidebar joins the setup/teardown lifecycle: one main pane sets up (seq 1)
+    %% then the sidebar (seq 2); teardown unwinds newest-first.
+    reset_lifecycle(),
+    Panes = [{sonde_shell_order_pane, <<"A">>}],
+    Opts = (lifecycle_opts())#{
+        sidebar => #{module => sonde_shell_order_pane, title => <<"Side">>, width => 10}
+    },
+    ?assertEqual(ok, sonde_shell:start(Panes, Opts)),
+    drain(<<>>, false),
+    ?assertEqual([{setup, 1}, {setup, 2}, {teardown, 2}, {teardown, 1}], lifecycle_log()).
+
 %%% -- helpers ---------------------------------------------------------
 
 %% Drive the multi-pane shell's loop synchronously over the scripted test backend,
