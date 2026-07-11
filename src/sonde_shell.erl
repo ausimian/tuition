@@ -211,7 +211,11 @@ all_specs(PaneSpecs, Opts) ->
 run(Handle, Shell) ->
     case sonde_term:size(Handle) of
         {ok, Size} ->
-            {Frame, Shell1} = build_frame(Size, Shell),
+            %% Sample the visible panes once before the first frame so the run
+            %% opens on populated panes — in particular the node picker shows its
+            %% rows (and takes navigation) immediately, rather than a focused but
+            %% empty "connecting…" list until the first idle tick a second later.
+            {Frame, Shell1} = build_frame(Size, sample(Shell)),
             Out = [?ERASE | sonde_render:diff(sonde_render:new(Size), Frame)],
             case sonde_term:write(Handle, Out) of
                 ok -> loop(Handle, Frame, Size, sonde_input:new(), Shell1);
@@ -611,8 +615,17 @@ new(PaneSpecs, Active, Opts) ->
         active = clamp(Active, 0, length(Panes) - 1),
         sidebar = Sidebar,
         sidebar_width = Width,
+        %% start focused on the sidebar (the node picker) when there is one, so a
+        %% multi-node run opens on Nodes — the user picks what to observe first;
+        %% a single-pane run has no sidebar and stays on its main pane.
+        focus = initial_focus(Sidebar),
         status_right = maps:get(status_right, Opts, none)
     }.
+
+%% The element focused at start: the sidebar when present, else the main pane.
+-spec initial_focus(none | #pane{}) -> main | sidebar.
+initial_focus(none) -> main;
+initial_focus(#pane{}) -> sidebar.
 
 %% Build the sidebar pane (and its column width) from its spec, or `none'.
 -spec build_sidebar(none | sidebar_spec()) -> {none | #pane{}, non_neg_integer()}.
