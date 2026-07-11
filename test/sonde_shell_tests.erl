@@ -296,28 +296,31 @@ sidebar_shell(Active) -> sonde_shell:new(?PANES, Active, #{sidebar => ?SIDEBAR})
 
 focus_at(Shell) -> {sonde_shell:focus(Shell), sonde_shell:active(Shell)}.
 
-sidebar_starts_focused_on_the_first_main_pane_test() ->
+sidebar_starts_focused_on_the_sidebar_test() ->
+    %% A shell with a sidebar (the node picker) starts focused on it, so a
+    %% multi-node run opens on Nodes and the operator picks what to observe first.
     S = sidebar_shell(),
-    ?assertEqual(main, sonde_shell:focus(S)),
+    ?assertEqual(sidebar, sonde_shell:focus(S)),
     ?assertEqual(0, sonde_shell:active(S)),
-    ?assertEqual(sonde_shell_pane_a, sonde_shell:focused_module(S)).
+    ?assertEqual(sonde_shell_side_pane, sonde_shell:focused_module(S)).
 
 tab_ring_includes_the_sidebar_as_the_leftmost_stop_test() ->
-    %% From the first main pane, Tab walks the main panes then the sidebar and back:
-    %% main0 -> main1 -> sidebar -> main0.
+    %% Starting on the sidebar, Tab walks it then the main panes and back:
+    %% sidebar -> main0 -> main1 -> sidebar.
     S0 = sidebar_shell(),
+    ?assertEqual(sidebar, sonde_shell:focus(S0)),
     {ok, S1} = sonde_shell:apply_events([tab()], S0),
-    ?assertEqual({main, 1}, focus_at(S1)),
+    ?assertEqual({main, 0}, focus_at(S1)),
     {ok, S2} = sonde_shell:apply_events([tab()], S1),
-    ?assertEqual(sidebar, sonde_shell:focus(S2)),
-    ?assertEqual(sonde_shell_side_pane, sonde_shell:focused_module(S2)),
+    ?assertEqual({main, 1}, focus_at(S2)),
     {ok, S3} = sonde_shell:apply_events([tab()], S2),
-    ?assertEqual({main, 0}, focus_at(S3)).
+    ?assertEqual(sidebar, sonde_shell:focus(S3)).
 
-shift_tab_from_the_first_main_pane_lands_on_the_sidebar_test() ->
-    %% The sidebar is the ring's leftmost stop, so stepping back off main0 reaches it.
+shift_tab_from_the_sidebar_wraps_to_the_last_main_pane_test() ->
+    %% The sidebar is the ring's leftmost stop, so stepping back off it wraps to the
+    %% last main pane.
     {ok, S1} = sonde_shell:apply_events([backtab()], sidebar_shell()),
-    ?assertEqual(sidebar, sonde_shell:focus(S1)).
+    ?assertEqual({main, 1}, focus_at(S1)).
 
 sidebar_and_active_pane_both_render_each_frame_test() ->
     B = frame(sidebar_shell()),
@@ -336,25 +339,26 @@ sample_refreshes_the_sidebar_and_the_active_pane_test() ->
     ?assert(length(sonde_shell_pane_a:rows(sonde_shell:active_state(S1))) > 0).
 
 sample_still_refreshes_the_active_pane_while_the_sidebar_has_focus_test() ->
-    %% Focus on the sidebar must not stop the visible main pane from sampling — it is
-    %% still on screen next to the sidebar.
-    {ok, S1} = sonde_shell:apply_events([backtab()], sidebar_shell()),
-    ?assertEqual(sidebar, sonde_shell:focus(S1)),
-    S2 = sonde_shell:sample(S1),
-    ?assertEqual(1, sonde_shell_side_pane:samples(sonde_shell:sidebar_state(S2))),
-    ?assert(length(sonde_shell_pane_a:rows(sonde_shell:active_state(S2))) > 0).
+    %% Focus on the sidebar (the start-up default) must not stop the visible main
+    %% pane from sampling — it is still on screen next to the sidebar.
+    S0 = sidebar_shell(),
+    ?assertEqual(sidebar, sonde_shell:focus(S0)),
+    S1 = sonde_shell:sample(S0),
+    ?assertEqual(1, sonde_shell_side_pane:samples(sonde_shell:sidebar_state(S1))),
+    ?assert(length(sonde_shell_pane_a:rows(sonde_shell:active_state(S1))) > 0).
 
 keys_route_to_the_sidebar_while_it_has_focus_test() ->
-    %% Down reaches the sidebar (its move counter ticks) and leaves the main pane's
-    %% selection untouched.
-    {ok, S1} = sonde_shell:apply_events([backtab()], sidebar_shell()),
-    {ok, S2} = sonde_shell:apply_events([{key, down, []}], S1),
+    %% The sidebar holds focus at start, so Down reaches it (its move counter ticks)
+    %% and leaves the main pane's selection untouched.
+    {ok, S2} = sonde_shell:apply_events([{key, down, []}], sidebar_shell()),
     ?assertEqual(1, sonde_shell_side_pane:moved(sonde_shell:sidebar_state(S2))),
     ?assertEqual(0, sonde_shell_pane_a:selection(sonde_shell:active_state(S2))).
 
 keys_route_to_the_main_pane_while_it_has_focus_test() ->
-    %% With focus on the main pane, Down moves the main pane and not the sidebar.
-    {ok, S1} = sonde_shell:apply_events([{key, down, []}], sidebar_shell()),
+    %% With focus moved to the main pane, Down moves the main pane and not the sidebar.
+    {ok, S0} = sonde_shell:apply_events([tab()], sidebar_shell()),
+    ?assertEqual({main, 0}, focus_at(S0)),
+    {ok, S1} = sonde_shell:apply_events([{key, down, []}], S0),
     ?assertEqual(1, sonde_shell_pane_a:selection(sonde_shell:active_state(S1))),
     ?assertEqual(0, sonde_shell_side_pane:moved(sonde_shell:sidebar_state(S1))).
 
@@ -396,7 +400,7 @@ sidebar_sample_request_forces_a_sample_off_a_keystroke_test() ->
     %% That must make the shell run its sample cycle off the keystroke — not wait for
     %% an idle tick — so the active main pane refreshes at once (its stub sample
     %% populates a row). A plain navigation key must NOT force a sample.
-    {ok, OnSidebar} = sonde_shell:apply_events([backtab()], sidebar_shell()),
+    OnSidebar = sidebar_shell(),
     ?assertEqual(sidebar, sonde_shell:focus(OnSidebar)),
     %% A non-switch key: no forced sample (a keystroke, and no request armed).
     {ok, Nav} = sonde_shell:apply_events([{key, down, []}], OnSidebar),
