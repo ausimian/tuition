@@ -7,8 +7,8 @@
 %%% has no field here. Every field below is an *optional enrichment* the runtime
 %%% probe turns on only when the terminal answers its query; an absent or
 %%% negative reply leaves it at its safe-off default (graceful degradation).
--ifndef(SONDE_CAPS_HRL).
--define(SONDE_CAPS_HRL, true).
+-ifndef(TUITION_CAPS_HRL).
+-define(TUITION_CAPS_HRL, true).
 
 -record(caps, {
     %% 24-bit RGB SGR, discriminated with a DECRQSS read-back (a 256-colour-only

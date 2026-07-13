@@ -1,8 +1,8 @@
 %%% A single rendered terminal cell, shared by the diff renderer and the
 %%% terminal backends. Kept intentionally small for Phase 0; styling
 %%% (SGR attributes, truecolor) expands as capability probing lands.
--ifndef(SONDE_TERM_HRL).
--define(SONDE_TERM_HRL, true).
+-ifndef(TUITION_TERM_HRL).
+-define(TUITION_TERM_HRL, true).
 
 -record(cell, {
     %% The visible glyph: a single codepoint, or a grapheme cluster (base plus

@@ -9,8 +9,8 @@
 %%% not stashed in the widget. These records are that thread. {@link tuition_list}
 %%% takes a `#list_state{}' and returns an updated one (its scroll offset adjusted
 %%% to keep the selection in view), and the caller keeps it for the next frame.
--ifndef(SONDE_WIDGET_HRL).
--define(SONDE_WIDGET_HRL, true).
+-ifndef(TUITION_WIDGET_HRL).
+-define(TUITION_WIDGET_HRL, true).
 
 -record(list_state, {
     %% The selected item index (0-based), or `none' for no selection. {@link
