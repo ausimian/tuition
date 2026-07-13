@@ -1,5 +1,13 @@
 ### Added
 
+- **`tuition_scrollview`** — a stateful viewport onto content larger than its
+  area: the caller paints a virtual buffer of a chosen `content_size` (via a
+  `draw` fun or a pre-built buffer) and the widget blits the scrolled window into
+  the visible rect, panning in both axes. Wide glyphs clipped at a window edge are
+  blanked rather than shown as stray halves; offsets are clamped to the content
+  edge at render time. Optional `scrollbars` compose `tuition_scrollbar` onto the
+  edges. State (`{x_offset, y_offset}`) is a `#scrollview_state{}` threaded by the
+  caller, with `new/0`, `scroll_to/3`, `scroll_by/3`, `offset/1` and `size/1`.
 - **`tuition_scrollbar`** — a stateless scrollbar widget: a track with a
   proportional thumb showing scroll position and extent beside a scrollable pane.
   Vertical or horizontal, proportional thumb size (floored at one cell), optional

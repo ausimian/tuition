@@ -25,4 +25,15 @@
     offset = 0 :: non_neg_integer()
 }).
 
+-record(scrollview_state, {
+    %% The top-left corner of the window onto the virtual content: the column
+    %% ({@link tuition_scrollview} pans horizontally) and row (vertically) of the
+    %% content cell shown at the viewport's top-left. Both are clamped at render
+    %% time so the window never runs past the content edge, and the reconciled
+    %% state is returned so the scroll position survives the immediate-mode rebuild
+    %% each frame — the same thread {@link tuition_list} keeps for its `offset'.
+    x_offset = 0 :: non_neg_integer(),
+    y_offset = 0 :: non_neg_integer()
+}).
+
 -endif.
