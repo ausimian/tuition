@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% @doc Microbenchmark for {@link sonde_render:diff/2}.
+%%% @doc Microbenchmark for {@link tuition_render:diff/2}.
 %%%
 %%% Rendering is the render hot path (PRD §8): the renderer is immediate-mode
 %%% (the ratatui model), so `diff/2' walks *every* cell of the frame each time
@@ -17,15 +17,15 @@
 %%%     common interactive case (a cursor blink, a counter tick) — the full scan
 %%%     plus one cursor move and one glyph.
 %%%   * `wide'        — `diff(blank, cjk_frame)': a frame of two-column CJK/emoji
-%%%     glyphs, exercising the {@link //sonde_tui/sonde_width} column-advance on
+%%%     glyphs, exercising the {@link //tuition/tuition_width} column-advance on
 %%%     the render path (issue #5) far harder than the ASCII dashboard.
 %%%
 %%% Legacy `rebar3_bench' callbacks: each `NAME/1' prepares the (cached) input
 %%% pair and `bench_NAME/2' is the timed body — a single `diff/2' call. Run with
 %%% `rebar3 as bench bench'.
 %%%
-%%% Frames are built entirely through the public `sonde_render' drawing API
-%%% ({@link sonde_render:new/1}, {@link sonde_render:put_text/5}), so this module
+%%% Frames are built entirely through the public `tuition_render' drawing API
+%%% ({@link tuition_render:new/1}, {@link tuition_render:put_text/5}), so this module
 %%% needs no access to the `#cell{}' record header.
 %%% @end
 %%%-------------------------------------------------------------------
@@ -52,11 +52,11 @@
 %% Prepare the input once: a blank buffer and a fully populated frame.
 full_paint({input, _}) ->
     Size = {?COLS, ?ROWS},
-    {sonde_render:new(Size), dashboard(Size)}.
+    {tuition_render:new(Size), dashboard(Size)}.
 
 %% Timed body: repaint the whole screen from blank.
 bench_full_paint({Prev, Next}, _) ->
-    sonde_render:diff(Prev, Next).
+    tuition_render:diff(Prev, Next).
 
 %%% -- no-op (scan floor) ----------------------------------------------
 
@@ -67,7 +67,7 @@ noop({input, _}) ->
 
 %% Timed body: diff a frame against itself — walks all cells, emits nothing.
 bench_noop({Prev, Next}, _) ->
-    sonde_render:diff(Prev, Next).
+    tuition_render:diff(Prev, Next).
 
 %%% -- single-cell change ----------------------------------------------
 
@@ -76,24 +76,24 @@ bench_noop({Prev, Next}, _) ->
 %% difference to a single cell regardless of what the dashboard drew there.
 single_cell({input, _}) ->
     Base = dashboard({?COLS, ?ROWS}),
-    Prev = sonde_render:put_text(Base, 60, 20, "0"),
-    Next = sonde_render:put_text(Base, 60, 20, "1"),
+    Prev = tuition_render:put_text(Base, 60, 20, "0"),
+    Next = tuition_render:put_text(Base, 60, 20, "1"),
     {Prev, Next}.
 
 %% Timed body: full scan plus a lone cursor move and one glyph.
 bench_single_cell({Prev, Next}, _) ->
-    sonde_render:diff(Prev, Next).
+    tuition_render:diff(Prev, Next).
 
 %%% -- wide-glyph-heavy paint ------------------------------------------
 
 %% Prepare the input once: a blank buffer and a frame of two-column glyphs.
 wide({input, _}) ->
     Size = {?COLS, ?ROWS},
-    {sonde_render:new(Size), cjk_frame(Size)}.
+    {tuition_render:new(Size), cjk_frame(Size)}.
 
 %% Timed body: repaint a wide-glyph screen from blank.
 bench_wide({Prev, Next}, _) ->
-    sonde_render:diff(Prev, Next).
+    tuition_render:diff(Prev, Next).
 
 %%% -- frame builders --------------------------------------------------
 
@@ -103,13 +103,13 @@ bench_wide({Prev, Next}, _) ->
 %% exercises the SGR transitions in diff/2, not just glyph emission.
 dashboard(Size) ->
     Title = "Sonde   nodes: 4   procs: 128934   reductions/s: 4.21M   mem: 1.8G",
-    Buf0 = sonde_render:new(Size),
-    Buf1 = sonde_render:put_text(Buf0, 0, 0, pad(Title), #{bold => true, fg => 15, bg => 4}),
+    Buf0 = tuition_render:new(Size),
+    Buf1 = tuition_render:put_text(Buf0, 0, 0, pad(Title), #{bold => true, fg => 15, bg => 4}),
     lists:foldl(fun(Y, B) -> put_row(B, Y) end, Buf1, lists:seq(1, ?ROWS - 1)).
 
 %% One process-listing style row, drawn with the row's style.
 put_row(Buf, Y) ->
-    sonde_render:put_text(Buf, 0, Y, pad(row_text(Y)), row_style(Y)).
+    tuition_render:put_text(Buf, 0, Y, pad(row_text(Y)), row_style(Y)).
 
 %% A ~full-width process-listing line, varied per row so the frame is not a
 %% single repeated string. Returned as an iolist (valid chardata for put_text).
@@ -124,7 +124,7 @@ row_text(Y) ->
         integer_to_list(Y rem 8),
         "   heap=",
         integer_to_list(610 + Y * 13),
-        "   name=sonde_worker_",
+        "   name=tuition_worker_",
         integer_to_list(Y),
         "   ",
         lists:duplicate(40, $-)
@@ -136,12 +136,12 @@ row_style(Y) when Y rem 3 =:= 0 -> #{fg => 8};
 row_style(_Y) -> #{}.
 
 %% A frame of two-column glyphs, one tiled line per row, diffed against blank in
-%% the `wide' case. Each glyph advances the write column by two via sonde_width.
+%% the `wide' case. Each glyph advances the write column by two via tuition_width.
 cjk_frame(Size) ->
     Line = wide_line(),
     lists:foldl(
-        fun(Y, B) -> sonde_render:put_text(B, 0, Y, Line) end,
-        sonde_render:new(Size),
+        fun(Y, B) -> tuition_render:put_text(B, 0, Y, Line) end,
+        tuition_render:new(Size),
         lists:seq(0, ?ROWS - 1)
     ).
 

@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% @doc Microbenchmark for {@link sonde_input:parse/2}.
+%%% @doc Microbenchmark for {@link tuition_input:parse/2}.
 %%%
 %%% Every keystroke and paste passes through the input parser, so decoding raw
 %%% bytes into events is a hot path for interactive latency (PRD §8). The input
@@ -39,8 +39,8 @@ parse({input, _}) ->
         <<1>>
     ],
     Bytes = iolist_to_binary(lists:duplicate(16, Seq)),
-    {Bytes, sonde_input:new()}.
+    {Bytes, tuition_input:new()}.
 
 %% Timed body: decode the whole stream from a fresh parser state.
 bench_parse({Bytes, State}, _) ->
-    sonde_input:parse(Bytes, State).
+    tuition_input:parse(Bytes, State).

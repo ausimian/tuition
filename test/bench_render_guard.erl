@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% @doc Perf-regression guard for {@link sonde_render:diff/2} (issue #26).
+%%% @doc Perf-regression guard for {@link tuition_render:diff/2} (issue #26).
 %%%
 %%% #22 optimized `diff/2' (row-major scan + a per-cell width cache), so there is
 %%% now a much faster baseline worth protecting from silent regressions. This
@@ -11,7 +11,7 @@
 %%% Absolute microsecond ceilings flake on shared CI runners (a busy runner is
 %%% simply slower at everything). So the guard is deterministic and *ratio-based*:
 %%% for each guarded frame it times `diff/2' against a cheap in-process baseline
-%%% — a bare per-cell read of the *same* frame via {@link sonde_render:cell_at/3}
+%%% — a bare per-cell read of the *same* frame via {@link tuition_render:cell_at/3}
 %%% — and asserts the ratio stays under a generous ceiling. Both operations are
 %%% O(cells) walks over the same 120x40 grid, so raw machine speed cancels out of
 %%% the ratio and only the *relative* cost of diffing (scan + SGR/glyph emission)
@@ -84,8 +84,8 @@ render_guard_test_() ->
 -spec check() -> ok.
 check() ->
     Cases = cases(),
-    {W, H} = sonde_render:size(element(3, hd(Cases))),
-    report("sonde_render:diff/2 perf guard (median diff/cell_at ratio over ~b cells)", [W * H]),
+    {W, H} = tuition_render:size(element(3, hd(Cases))),
+    report("tuition_render:diff/2 perf guard (median diff/cell_at ratio over ~b cells)", [W * H]),
     Failures = lists:filtermap(fun run_case/1, Cases),
     case Failures of
         [] ->
@@ -100,9 +100,9 @@ cases() ->
     {FullPrev, FullNext} = bench_render:full_paint({input, guard}),
     {WidePrev, WideNext} = bench_render:wide({input, guard}),
     [
-        {full_paint, fun() -> sonde_render:diff(FullPrev, FullNext) end, FullNext,
+        {full_paint, fun() -> tuition_render:diff(FullPrev, FullNext) end, FullNext,
             ?FULL_PAINT_CEILING},
-        {wide, fun() -> sonde_render:diff(WidePrev, WideNext) end, WideNext, ?WIDE_CEILING}
+        {wide, fun() -> tuition_render:diff(WidePrev, WideNext) end, WideNext, ?WIDE_CEILING}
     ].
 
 %% Measure one case; emit a report line and keep it in the failure list if over.
@@ -143,12 +143,12 @@ repeat(Fun, N) ->
 %% Baseline: fold a bare cell read across every cell of the frame — the same
 %% O(cells) walk diff/2 performs, minus all the diff/emit work.
 cell_scan(Frame) ->
-    {W, H} = sonde_render:size(Frame),
+    {W, H} = tuition_render:size(Frame),
     Coords = [{X, Y} || Y <- lists:seq(0, H - 1), X <- lists:seq(0, W - 1)],
     fun() ->
         lists:foldl(
             fun({X, Y}, Acc) ->
-                _ = sonde_render:cell_at(Frame, X, Y),
+                _ = tuition_render:cell_at(Frame, X, Y),
                 Acc
             end,
             ok,
