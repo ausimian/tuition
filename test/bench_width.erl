@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% @doc Microbenchmark for {@link sonde_width:swidth/1}.
+%%% @doc Microbenchmark for {@link tuition_width:swidth/1}.
 %%%
 %%% PRD §8 flags Unicode display-width as the #1 correctness/perf risk: every
 %%% rendered cell run is measured with this, so it sits on the hot path. The
@@ -43,4 +43,4 @@ swidth({input, _}) ->
 
 %% Timed body: measure the display width of the whole mixed line.
 bench_swidth(Input, _) ->
-    sonde_width:swidth(Input).
+    tuition_width:swidth(Input).
