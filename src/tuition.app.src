@@ -1,0 +1,13 @@
+{application, tuition, [
+    {description, "Pure-Erlang terminal UI framework: backends, input, rendering, layout, widgets, app shell."},
+    {vsn, "0.1.0"},
+    {registered, []},
+    %% Library application: no `mod' entry. Nothing is auto-started — a host
+    %% (the `sonde' observer library, or any other BEAM TUI) drives the shell.
+    %% Runtime deps are OTP-only (PRD §12 hard constraint).
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [{"GitHub", "https://github.com/ausimian/tuition"}]}
+]}.
