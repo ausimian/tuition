@@ -221,35 +221,33 @@ rect(Grid, X0, Y0, X1, Y1, Colour) ->
 circle(Grid, CX, CY, R, Colour) when R =< 0 ->
     set(Grid, CX, CY, Colour);
 circle(Grid, CX, CY, R, Colour) ->
-    midpoint_circle(Grid, CX, CY, R, 0, 0, Colour).
+    midpoint_circle(Grid, CX, CY, R, 0, 1 - R, Colour).
 
-%% One midpoint-circle step: light the current point in all eight octants, stop
-%% once the walk has swept the first octant (`X < Y'), else advance `Y' (and,
-%% when the accumulated error turns positive, `X') by the standard integer
-%% decision update — no floating point, no trigonometry.
+%% One midpoint-circle step, walking the first octant from `{R, 0}' toward the 45°
+%% diagonal: light the current point in all eight octants, stop once the walk
+%% crosses the diagonal (`X < Y'), else step `Y' out one row and pull `X' in by one
+%% only when the decision term `D' says the row's midpoint has crossed outside the
+%% circle. `D' starts at `1 - R' (the sampled value of `x² + y² − r²' at the first
+%% midpoint) and is carried by the standard integer update — no floating point, no
+%% trigonometry. Initialising at `1 - R' rather than `0' is what keeps `X' from
+%% decrementing a row too early, so the ring stays on the true perimeter at every
+%% radius (an `Err = 0' start pulls `R >= 3' circles inward).
 -spec midpoint_circle(grid(), integer(), integer(), integer(), integer(), integer(), colour()) ->
     grid().
-midpoint_circle(Grid, _CX, _CY, X, Y, _Err, _Colour) when X < Y ->
+midpoint_circle(Grid, _CX, _CY, X, Y, _D, _Colour) when X < Y ->
     Grid;
-midpoint_circle(Grid, CX, CY, X, Y, Err, Colour) ->
+midpoint_circle(Grid, CX, CY, X, Y, D, Colour) ->
     Grid1 = plot_octants(Grid, CX, CY, X, Y, Colour),
-    {Y1, Err1} =
-        case Err =< 0 of
+    Y1 = Y + 1,
+    {X1, D1} =
+        case D < 0 of
             true ->
-                Yn = Y + 1,
-                {Yn, Err + 2 * Yn + 1};
+                {X, D + 2 * Y1 + 1};
             false ->
-                {Y, Err}
-        end,
-    {X1, Err2} =
-        case Err1 > 0 of
-            true ->
                 Xn = X - 1,
-                {Xn, Err1 - 2 * Xn - 1};
-            false ->
-                {X, Err1}
+                {Xn, D + 2 * (Y1 - Xn) + 1}
         end,
-    midpoint_circle(Grid1, CX, CY, X1, Y1, Err2, Colour).
+    midpoint_circle(Grid1, CX, CY, X1, Y1, D1, Colour).
 
 %% Light the eight reflections of `{X, Y}' about the centre `{CX, CY}' — the
 %% circle's eight-fold symmetry, so one octant's walk paints the whole ring.

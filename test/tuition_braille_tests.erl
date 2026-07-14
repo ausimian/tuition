@@ -200,14 +200,36 @@ circle_radius_one_is_the_four_axis_points_test() ->
     ?assertNot(lists:member({2, 2}, lit_dots(G, 2, 1))).
 
 circle_radius_two_walks_the_octants_test() ->
-    %% Radius 2 exercises more than one midpoint step: the eight mirrored points of
-    %% the ring about centre (3,4), the interior dark.
+    %% Radius 2 exercises more than one midpoint step: the full ring about centre
+    %% (3,4) — the four axis points plus the eight one-off-axis points — with the
+    %% interior dark. Every lit point sits a true distance ~2 from the centre.
     G = tuition_braille:circle(grid(4, 3), 3, 4, 2, default),
     Expected = lists:sort([
-        {1, 4}, {5, 4}, {3, 2}, {3, 6}, {2, 3}, {4, 3}, {2, 5}, {4, 5}
+        {1, 3},
+        {1, 4},
+        {1, 5},
+        {2, 2},
+        {2, 6},
+        {3, 2},
+        {3, 6},
+        {4, 2},
+        {4, 6},
+        {5, 3},
+        {5, 4},
+        {5, 5}
     ]),
     ?assertEqual(Expected, lit_dots(G, 4, 3)),
     ?assertNot(lists:member({3, 4}, lit_dots(G, 4, 3))).
+
+circle_radius_three_stays_on_the_perimeter_test() ->
+    %% Regression for the midpoint init: the walk must not pull X in a row too
+    %% early. One row above the centre (y = 1) the perimeter pixel is (R,1) — here
+    %% (8,6) at offset (+3,+1) from centre (5,5) — not the inward (7,6) at (+2,+1)
+    %% that an `Err = 0' start would have lit instead.
+    G = tuition_braille:circle(grid(5, 3), 5, 5, 3, default),
+    Lit = lit_dots(G, 5, 3),
+    ?assert(lists:member({8, 6}, Lit)),
+    ?assertNot(lists:member({7, 6}, Lit)).
 
 circle_clips_points_off_the_grid_test() ->
     %% Centred on a corner, only the arc that lands on-grid is drawn; the two
