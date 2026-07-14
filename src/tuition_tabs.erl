@@ -48,8 +48,13 @@
 %%%       it need only name the keys that differ); default unstyled, i.e. the
 %%%       selected title looks like the rest until this is set.</li>
 %%%   <li>`divider' — the glyph drawn between adjacent titles (default `│').</li>
-%%%   <li>`padding' — blank columns on each side of every title (default `1'),
-%%%       clamped at `0'.</li>
+%%%   <li>`padding' — columns of space on each side of every title (default `1',
+%%%       clamped at `0'). Like the rest of the bar these follow `style': painted
+%%%       with the base fill when it is set, and left transparent — showing the
+%%%       parent background (or whatever the bar is drawn over) — when it is not.
+%%%       They are never overwritten with default-blank cells, so an unstyled bar
+%%%       composes cleanly over a parent block's coloured strip, matching {@link
+%%%       tuition_widget:fill/3}.</li>
 %%%   <li>`title_align' — `left' (default) | `center' | `right', where the strip
 %%%       sits within `Area' when it is narrower than the area.</li>
 %%% </ul>
@@ -83,9 +88,10 @@
 %% U+2502 BOX DRAWINGS LIGHT VERTICAL — the default divider between titles.
 -define(DIVIDER, 16#2502).
 
-%% A drawable piece of the row, laid end to end: a run of `Width' blank columns
-%% (`pad', drawn as nothing — the base fill or the underlying buffer shows
-%% through), or `Width' columns of `Text' in `Style' (a title or a divider).
+%% A drawable piece of the row, laid end to end: a run of `Width' empty columns
+%% (`pad', drawn as nothing — the base fill, or whatever the bar is drawn over,
+%% shows through), or `Width' columns of `Text' in `Style' (a title or a
+%% divider).
 -type seg() ::
     {pad, non_neg_integer()}
     | {text, unicode:chardata(), non_neg_integer(), tuition_render:style()}.
