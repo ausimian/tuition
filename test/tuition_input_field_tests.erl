@@ -256,6 +256,16 @@ zero_width_tail_keeps_the_caret_visible_test() ->
     ?assertEqual(1, S#input_state.offset),
     ?assertMatch(#cell{underline = true}, cell(B, 0, 0)).
 
+large_value_scrolls_to_the_caret_in_one_linear_pass_test() ->
+    %% A long value with the caret at the end reconciles via prefix sums (O(n)), not
+    %% by re-summing a sublist per hidden cluster (O(n^2)); it lands the offset on
+    %% the tail and shows the last chars plus the caret.
+    N = 1000,
+    {B, S} = render(#{}, 5, 1, typed(binary:copy(<<"a">>, N))),
+    ?assertEqual(N - 5 + 1, S#input_state.offset),
+    ?assertEqual($a, ch(B, 0, 0)),
+    ?assertMatch(#cell{char = $\s, underline = true}, cell(B, 4, 0)).
+
 %%% -- reconciliation --------------------------------------------------
 
 render_clamps_a_stale_cursor_test() ->

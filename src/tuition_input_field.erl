@@ -374,20 +374,22 @@ reconcile(#input_state{value = Value, cursor = Cursor0, offset = Offset0}, Displ
 adjust_offset(_Offset, _Cursor, _Display, W) when W =< 0 ->
     0;
 adjust_offset(Offset0, Cursor, Display, W) ->
-    Widths = [Width || {_Glyph, Width} <- Display],
-    N = length(Widths),
+    Pre = prefix_sums([Width || {_Glyph, Width} <- Display]),
+    N = tuple_size(Pre) - 1,
     Capped = min(max(Offset0, 0), Cursor),
-    Pushed = push_right(Capped, Cursor, Widths, W),
-    pull_left(Pushed, Cursor, N, Widths, W).
+    Pushed = push_right(Capped, Cursor, Pre, W),
+    pull_left(Pushed, Cursor, N, Pre, W).
 
 %% Push the offset right until the caret's column (the width of the clusters
 %% between the offset and the caret) leaves room for the caret cell in `W'. Stops
-%% at the caret at the latest, where that width is zero.
--spec push_right(non_neg_integer(), non_neg_integer(), [non_neg_integer()], pos_integer()) ->
+%% at the caret at the latest, where that width is zero. Linear in the clusters it
+%% steps over: each step is one O(1) {@link span/3} lookup, so a long value with the
+%% caret at the end (a large paste) reconciles in O(n), not O(n²).
+-spec push_right(non_neg_integer(), non_neg_integer(), tuple(), pos_integer()) ->
     non_neg_integer().
-push_right(Offset, Cursor, Widths, W) ->
-    case Offset < Cursor andalso width_between(Widths, Offset, Cursor) > W - 1 of
-        true -> push_right(Offset + 1, Cursor, Widths, W);
+push_right(Offset, Cursor, Pre, W) ->
+    case Offset < Cursor andalso span(Pre, Offset, Cursor) > W - 1 of
+        true -> push_right(Offset + 1, Cursor, Pre, W);
         false -> Offset
     end.
 
@@ -403,16 +405,16 @@ push_right(Offset, Cursor, Widths, W) ->
 %%     than folded into the tail width (else the caret is pushed off the right edge
 %%     and {@link draw_caret/7} draws nothing).
 -spec pull_left(
-    non_neg_integer(), non_neg_integer(), non_neg_integer(), [non_neg_integer()], pos_integer()
+    non_neg_integer(), non_neg_integer(), non_neg_integer(), tuple(), pos_integer()
 ) -> non_neg_integer().
-pull_left(0, _Cursor, _N, _Widths, _W) ->
+pull_left(0, _Cursor, _N, _Pre, _W) ->
     0;
-pull_left(Offset, Cursor, N, Widths, W) ->
+pull_left(Offset, Cursor, N, Pre, W) ->
     CaretExtra = caret_extra(Cursor, N),
-    TailFits = width_between(Widths, Offset - 1, N) + CaretExtra =< W,
-    CaretFits = width_between(Widths, Offset - 1, Cursor) =< W - 1,
+    TailFits = span(Pre, Offset - 1, N) + CaretExtra =< W,
+    CaretFits = span(Pre, Offset - 1, Cursor) =< W - 1,
     case TailFits andalso CaretFits of
-        true -> pull_left(Offset - 1, Cursor, N, Widths, W);
+        true -> pull_left(Offset - 1, Cursor, N, Pre, W);
         false -> Offset
     end.
 
@@ -480,7 +482,7 @@ draw_placeholder(Cfg, Area, Buf, Base) ->
     integer()
 ) -> tuition_render:buffer().
 draw_caret(Cfg, #rect{x = X, y = Y}, Buf, Display, Offset, Cursor, W) ->
-    CaretCol = width_between([Width || {_G, Width} <- Display], Offset, Cursor),
+    CaretCol = span(prefix_sums([Width || {_G, Width} <- Display]), Offset, Cursor),
     case CaretCol < W of
         false ->
             Buf;
@@ -528,13 +530,29 @@ placeholder_style(Cfg, Base) ->
 -spec top_row(#rect{}) -> #rect{}.
 top_row(#rect{x = X, y = Y, w = W}) -> #rect{x = X, y = Y, w = W, h = 1}.
 
-%% Columns spanned by the clusters in `[From, To)' — the width the caret sits at
-%% relative to the offset, and the visible tail width for scroll reconciliation.
--spec width_between([non_neg_integer()], non_neg_integer(), non_neg_integer()) -> non_neg_integer().
-width_between(Widths, From, To) when To > From ->
-    lists:sum(lists:sublist(Widths, From + 1, To - From));
-width_between(_Widths, _From, _To) ->
-    0.
+%% Prefix sums of the per-cluster display widths: a tuple `Pre' of `N + 1' entries
+%% where `element(I + 1, Pre)' is the total width of the first `I' clusters. Built
+%% once per reconcile and per draw so any cluster span is one O(1) subtraction
+%% ({@link span/3}); summing a sublist on each scroll step instead would make a
+%% long value's first render O(n²) and could hang the UI on a large paste.
+-spec prefix_sums([non_neg_integer()]) -> tuple().
+prefix_sums(Widths) ->
+    {_Total, Rev} = lists:foldl(
+        fun(Width, {Acc, Sums}) ->
+            Next = Acc + Width,
+            {Next, [Next | Sums]}
+        end,
+        {0, [0]},
+        Widths
+    ),
+    list_to_tuple(lists:reverse(Rev)).
+
+%% Columns spanned by the clusters in `[From, To)', in O(1) from the prefix sums —
+%% the width the caret sits at relative to the offset, and the visible tail width
+%% for scroll reconciliation. `From =< To', both in `[0, N]'.
+-spec span(tuple(), non_neg_integer(), non_neg_integer()) -> non_neg_integer().
+span(Pre, From, To) ->
+    element(To + 1, Pre) - element(From + 1, Pre).
 
 %% One extra column for the caret when it sits past the last cluster (at the end of
 %% the value), so scroll reconciliation reserves room for it; zero otherwise.
