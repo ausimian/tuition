@@ -1,5 +1,14 @@
 ### Added
 
+- **`tuition_clear`** — a stateless overlay primitive: it blanks a rect, resetting
+  every cell to a plain space, so a modal popup / confirm dialog / help overlay
+  drawn last in a frame starts from a clean slate instead of showing the content
+  beneath it through the gaps it leaves. It is ratatui's `Clear`. Unlike the shared
+  `tuition_widget:fill/3`, which no-ops an empty style (letting a parent background
+  show through), Clear's default style still overwrites — the reset is the point; a
+  non-empty `style` lays a coloured backdrop under the overlay instead. A wide glyph
+  straddling the region is dissolved whole, leaving no orphaned half. (A
+  `centered_rect/3` helper to place popups is a deferred follow-up.)
 - **`tuition_spinner`** — a stateless in-flight indicator: a single animated glyph
   (optionally with a label) a pane draws while an async operation is pending, so a
   slow owner/remote read reads as "loading" rather than a frozen or stale view.
