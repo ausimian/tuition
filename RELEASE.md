@@ -1,5 +1,14 @@
 ### Added
 
+- **`tuition_spinner`** — a stateless in-flight indicator: a single animated glyph
+  (optionally with a label) a pane draws while an async operation is pending, so a
+  slow owner/remote read reads as "loading" rather than a frozen or stale view.
+  Which glyph shows is purely `frame rem length`, so animation is a pure function
+  of the caller's tick (the shell already ticks every pane) with no internal timer
+  or state; a negative `frame` is handled rather than crashing. Built-in sets
+  `braille` (default), `dots` and `line` are single-column so the label never
+  jitters, or pass a custom glyph list; `style` / `label_style` colour the two
+  parts.
 - **Fixed capability profiles** — a host can now skip the interactive terminal
   capability probe and supply a known capability set instead, for an asynchronous
   or high-latency backend (such as a Livebook/xterm.js terminal) where the probe's
