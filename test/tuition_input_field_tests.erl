@@ -245,6 +245,17 @@ scroll_offset_pulls_back_after_the_value_shrinks_test() ->
     ?assertEqual($a, ch(B, 0, 0)),
     ?assertEqual($b, ch(B, 1, 0)).
 
+zero_width_tail_keeps_the_caret_visible_test() ->
+    %% "a" + U+200B (zero-width space) in a 1-column field, caret at index 1 (before
+    %% the zero-width cluster). The zero-width tail must not let the offset pull back
+    %% to 0, which would push the caret column off the 1-column field and draw no
+    %% caret; the offset stays at 1 so the caret is shown.
+    ZWSP = 16#200B,
+    State = #input_state{value = <<$a, ZWSP/utf8>>, cursor = 1, offset = 0},
+    {B, S} = render(#{}, 1, 1, State),
+    ?assertEqual(1, S#input_state.offset),
+    ?assertMatch(#cell{underline = true}, cell(B, 0, 0)).
+
 %%% -- reconciliation --------------------------------------------------
 
 render_clamps_a_stale_cursor_test() ->

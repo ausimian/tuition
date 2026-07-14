@@ -391,10 +391,17 @@ push_right(Offset, Cursor, Widths, W) ->
         false -> Offset
     end.
 
-%% Pull the offset back left while the visible tail (the value from one cluster
-%% earlier to the end, plus the caret's own column when it sits at the very end)
-%% would still fit in `W' — so a value that shrank does not leave leading text
-%% hidden behind a blank right margin.
+%% Pull the offset back left while doing so keeps the view valid — so a value that
+%% shrank does not leave leading text hidden behind a blank right margin — subject
+%% to two invariants that must both hold for the candidate offset one cluster
+%% earlier:
+%%   * the visible tail (the value from that cluster to the end, plus the caret's
+%%     own column when it sits at the very end) still fits in `W'; and
+%%   * the caret column still fits — pulling left widens the columns before the
+%%     caret, and a zero-width cluster *after* the caret can make the total tail fit
+%%     while the caret column would not, so this is checked in its own right rather
+%%     than folded into the tail width (else the caret is pushed off the right edge
+%%     and {@link draw_caret/7} draws nothing).
 -spec pull_left(
     non_neg_integer(), non_neg_integer(), non_neg_integer(), [non_neg_integer()], pos_integer()
 ) -> non_neg_integer().
@@ -402,7 +409,9 @@ pull_left(0, _Cursor, _N, _Widths, _W) ->
     0;
 pull_left(Offset, Cursor, N, Widths, W) ->
     CaretExtra = caret_extra(Cursor, N),
-    case width_between(Widths, Offset - 1, N) + CaretExtra =< W of
+    TailFits = width_between(Widths, Offset - 1, N) + CaretExtra =< W,
+    CaretFits = width_between(Widths, Offset - 1, Cursor) =< W - 1,
+    case TailFits andalso CaretFits of
         true -> pull_left(Offset - 1, Cursor, N, Widths, W);
         false -> Offset
     end.
