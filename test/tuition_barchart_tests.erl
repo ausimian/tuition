@@ -143,6 +143,21 @@ vertical_all_zero_auto_max_is_safe_test() ->
     ?assertEqual($\s, ch(B, 0, 0)),
     ?assertEqual($\s, ch(B, 1, 0)).
 
+fractional_max_below_one_is_honoured_test() ->
+    %% An explicit fractional ceiling fills the bar rather than clamping to max 1.
+    B = render(#{bars => [#{value => 0.5, text_value => none}], max => 0.5}, 1, 1),
+    ?assertEqual(?FULL, ch(B, 0, 0)).
+
+fractional_auto_max_uses_the_largest_value_test() ->
+    %% Ratios in [0, 1] with no explicit max: the largest (0.5) maps to full height.
+    Cfg = #{
+        bars => [#{value => 0.25, text_value => none}, #{value => 0.5, text_value => none}],
+        bar_gap => 0
+    },
+    B = render(Cfg, 2, 1),
+    ?assertEqual(?E4, ch(B, 0, 0)),
+    ?assertEqual(?FULL, ch(B, 1, 0)).
+
 %%% -- direction default -----------------------------------------------
 
 default_direction_is_vertical_test() ->

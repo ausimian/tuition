@@ -57,8 +57,10 @@
 %%%           least `fg' to colour it).</li>
 %%%     </ul></li>
 %%%   <li>`direction' — `vertical' (default) | `horizontal'.</li>
-%%%   <li>`max' — `auto' (default; the largest bar value, at least 1) or an
-%%%       explicit positive number every bar is scaled against.</li>
+%%%   <li>`max' — `auto' (default; the largest bar value — a fractional largest is
+%%%       honoured, so a chart of ratios in `[0, 1]' fills its bars) or an explicit
+%%%       positive number every bar is scaled against. A non-positive or empty
+%%%       scale falls back to 1 to keep the arithmetic well defined.</li>
 %%%   <li>`bar_width' — a bar's thickness: its width in columns when vertical, its
 %%%       height in rows when horizontal (default `1', floored at `1').</li>
 %%%   <li>`bar_gap' — blank cells between adjacent bars (default `1', floored at
@@ -461,12 +463,20 @@ has_label(Bar) -> tuition_widget:display_width(bar_label(Bar)) > 0.
 %%% -- helpers ---------------------------------------------------------
 
 %% The value that maps to a full bar: an explicit positive `max', or (for `auto')
-%% the largest bar value — never below 1, so the scale is well defined and the
-%% eighth arithmetic cannot divide by zero on an empty or all-zero chart.
+%% the largest bar value — including a fractional one, so a chart of ratios in
+%% `[0, 1]' fills its bars rather than topping out at an eighth of the height. The
+%% only floor is against a non-positive scale (an empty or all-zero `auto' chart,
+%% or a non-positive explicit `max'): there a fallback of 1 keeps the eighth
+%% arithmetic well defined instead of dividing by zero.
 -spec resolve_max(auto | number(), [bar()]) -> number().
-resolve_max(auto, Bars) -> lists:max([1 | [bar_value(B) || B <- Bars]]);
-resolve_max(Max, _Bars) when is_number(Max), Max >= 1 -> Max;
-resolve_max(_Max, _Bars) -> 1.
+resolve_max(auto, Bars) ->
+    case lists:max([0 | [bar_value(B) || B <- Bars]]) of
+        Max when Max > 0 -> Max;
+        _ -> 1
+    end;
+resolve_max(Max, _Bars) when is_number(Max), Max > 0 -> Max;
+resolve_max(_Max, _Bars) ->
+    1.
 
 %% The widest of a list of texts in display columns (0 for an empty list), used to
 %% size the horizontal label and value columns.
