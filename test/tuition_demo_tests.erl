@@ -1,6 +1,7 @@
 -module(tuition_demo_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("tuition_caps.hrl").
 
 %% Full-screen erase the loop emits ahead of a fresh-baseline paint (matches
 %% tuition_demo's own ?ERASE).
@@ -133,7 +134,52 @@ loop_surfaces_resize_event_test() ->
     %% Two full-screen erases: the first frame and the post-resize repaint.
     ?assertEqual(2, length(binary:matches(Frames, ?ERASE))).
 
+%% A host can supply a fixed capability profile instead of probing (issue #16): the
+%% caps drive real output — the status line names them and the hello pane is painted
+%% in 24-bit RGB — yet *no* probe queries are written, so a backend that cannot
+%% answer the interactive probe never has stray replies injected as input. Proven by
+%% the absence of the DA1 sentinel query (`ESC [ c') and the DECRQSS truecolor
+%% read-back (`ESC P $ q m ST') the probe would otherwise emit.
+loop_uses_supplied_caps_without_probing_test() ->
+    Caps = #caps{truecolor = true, sync_output = true},
+    Frames = run_no_probe(#{caps => Caps}, [{ok, <<"q">>}], {60, 6}),
+    ?assertMatch({_, _}, binary:match(Frames, <<"truecolor">>)),
+    ?assertMatch({_, _}, binary:match(Frames, <<"sync">>)),
+    %% The turquoise 24-bit fg only a truecolor result selects.
+    ?assertMatch({_, _}, binary:match(Frames, <<"38;2;64;224;208">>)),
+    ?assertEqual(nomatch, binary:match(Frames, <<"\e[c">>)),
+    ?assertEqual(nomatch, binary:match(Frames, <<"\eP$qm\e\\">>)).
+
+%% `probe => false' skips the probe for the baseline set: the frame still renders,
+%% but *no* probe queries are emitted — the acceptance criterion for an async
+%% backend that cannot answer them. Asserted on the query bytes' absence (the DA1
+%% sentinel `ESC [ c', a DECRQM query, the DECRQSS read-back) rather than on the
+%% caps shown, since the host still folds the ambient `COLORTERM' onto the baseline
+%% and the test must not depend on the environment it runs in.
+loop_skips_probe_when_disabled_test() ->
+    Frames = run_no_probe(#{probe => false}, [{ok, <<"q">>}], {60, 6}),
+    ?assertMatch({_, _}, binary:match(Frames, <<"hello, world">>)),
+    ?assertMatch({_, _}, binary:match(Frames, <<"press q to quit">>)),
+    ?assertEqual(nomatch, binary:match(Frames, <<"\e[c">>)),
+    ?assertEqual(nomatch, binary:match(Frames, <<"\e[?2026$p">>)),
+    ?assertEqual(nomatch, binary:match(Frames, <<"\eP$qm\e\\">>)).
+
 %%% -- helpers ---------------------------------------------------------
+
+%% Run the loop with probing steered by `CapsOpts' (`caps'/`probe'), with *no*
+%% pre-probe read prepended — the whole `Script' is the loop's own input, since a
+%% skipped probe reads nothing first. Returns the concatenated write payloads.
+run_no_probe(CapsOpts, Script, Size) ->
+    Opts = maps:merge(CapsOpts, #{
+        backend => tuition_loop_term,
+        sink => self(),
+        size => Size,
+        script => Script
+    }),
+    ?assertEqual(ok, tuition_demo:start(Opts)),
+    {Frames, Closed} = drain(<<>>, false),
+    ?assert(Closed),
+    Frames.
 
 %% Run the loop over a scripted backend with a minimal probe reply (just the DA1
 %% sentinel, so the startup probe returns the baseline promptly).

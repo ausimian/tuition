@@ -242,3 +242,43 @@ apply_colorterm_preserves_other_caps_test() ->
         Caps#caps{truecolor = true},
         tuition_caps:apply_colorterm("truecolor", Caps)
     ).
+
+%%% -- resolve (host opt-out of probing, issue #16) --------------------
+
+%% `caps => Caps' uses the caller's profile verbatim: no query is written to the
+%% terminal (a silent script would still be enough — the point is nothing is sent)
+%% and the residue is empty.
+resolve_caps_uses_supplied_profile_without_probing_test() ->
+    Pid = tuition_probe_term:start([]),
+    Caps = #caps{truecolor = true, sgr_mouse = true},
+    ?assertEqual({Caps, <<>>}, tuition_caps:resolve({tuition_probe_term, Pid}, #{caps => Caps})),
+    ?assertEqual(<<>>, tuition_probe_term:sent(Pid)).
+
+%% `probe => false' skips the probe for the baseline set, again emitting nothing.
+resolve_probe_false_uses_baseline_without_probing_test() ->
+    Pid = tuition_probe_term:start([]),
+    ?assertEqual(
+        {#caps{}, <<>>}, tuition_caps:resolve({tuition_probe_term, Pid}, #{probe => false})
+    ),
+    ?assertEqual(<<>>, tuition_probe_term:sent(Pid)).
+
+%% With neither key the terminal is probed as before — the queries are written and
+%% the replies decoded.
+resolve_default_probes_test() ->
+    Pid = tuition_probe_term:start([{ok, <<(?SYNC_OK)/binary, (?DA)/binary>>}]),
+    {Caps, Residue} = tuition_caps:resolve({tuition_probe_term, Pid}, #{}),
+    ?assertEqual(#caps{sync_output = true}, Caps),
+    ?assertEqual(<<>>, Residue),
+    %% It actually probed: the DA1 sentinel query was emitted.
+    ?assertMatch({_, _}, binary:match(tuition_probe_term:sent(Pid), <<"\e[c">>)).
+
+%% An explicit `caps' wins over `probe' — a fixed profile is honoured even when
+%% `probe => true' is also present, and still nothing is written.
+resolve_caps_takes_precedence_over_probe_test() ->
+    Pid = tuition_probe_term:start([]),
+    Caps = #caps{bracketed_paste = true},
+    ?assertEqual(
+        {Caps, <<>>},
+        tuition_caps:resolve({tuition_probe_term, Pid}, #{caps => Caps, probe => true})
+    ),
+    ?assertEqual(<<>>, tuition_probe_term:sent(Pid)).
