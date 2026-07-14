@@ -1,5 +1,14 @@
 ### Added
 
+- **`tuition_line_gauge`** — a stateless single-row gauge: a label followed by a
+  thin horizontal line whose leading fraction is drawn `filled` and the rest
+  `unfilled`, for dense dashboards where the full-height `tuition_gauge` is too
+  heavy and metrics want to stack one per line. `ratio` is clamped to `[0, 1]`;
+  the `label` defaults to the rounded percentage (or `none`, yielding the full
+  width to the line); `line` selects the `thin` (`─`) / `heavy` (`━`) rule or a
+  custom glyph; and `filled_style` / `unfilled_style` / `label_style` colour the
+  three parts. Whole-cell fill (ratatui's `LineGauge`), drawn on the area's top
+  row.
 - **`tuition_scrollview`** — a stateful viewport onto content larger than its
   area: the caller paints a virtual buffer of a chosen `content_size` (via a
   `draw` fun or a pre-built buffer) and the widget blits the scrolled window into
