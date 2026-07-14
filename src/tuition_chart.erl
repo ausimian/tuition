@@ -195,17 +195,36 @@
 render(_Chart, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;
 render(Chart, Area, Buf0) ->
+    Axes = maps:get(axes, Chart, false),
+    Bounds = chart_bounds(Chart, Area, Axes),
     {PlotArea, Buf1} =
-        case maps:get(axes, Chart, false) of
-            true -> draw_frame(Chart, Area, Buf0);
+        case Axes of
+            true -> draw_frame(Chart, Area, Bounds, Buf0);
             false -> {Area, Buf0}
         end,
     Buf2 =
         case PlotArea of
             #rect{w = PW, h = PH} when PW =< 0; PH =< 0 -> Buf1;
-            _ -> plot(Chart, PlotArea, Buf1)
+            _ -> plot(Chart, PlotArea, Bounds, Buf1)
         end,
     draw_legend(Chart, PlotArea, Buf2).
+
+%% The y-bounds shared by the plot and the y-tick labels, resolved once from the
+%% datasets windowed to the *bounds width* — the plot width ignoring the y-tick
+%% gutter. Sizing the gutter from these bounds' labels (via {@link tick_gutter/2})
+%% therefore never feeds back into the bounds, so the labels always fit the gutter
+%% exactly and match the curve's scale. With ticks off (or no axes) the bounds
+%% width equals the plot width, so this is exactly what the plot resolved before.
+-spec chart_bounds(chart(), #rect{}, boolean()) -> {number(), number()}.
+chart_bounds(Chart, #rect{w = W}, Axes) ->
+    BoundsCols =
+        case Axes of
+            true -> max(0, W - has_text(y_title, Chart) - 1);
+            false -> W
+        end,
+    WinCount = resolve_window(maps:get(window, Chart, auto), BoundsCols * 2),
+    Series = [prepare(D, WinCount) || D <- maps:get(datasets, Chart, [])],
+    resolve_bounds(maps:get(y_bounds, Chart, auto), Series).
 
 %%% -- plotting --------------------------------------------------------
 
@@ -213,14 +232,14 @@ render(Chart, Area, Buf0) ->
 %% composite it in. A shared grid is what makes overlapping cells merge their dots
 %% and take the last dataset's colour (the one-colour-per-cell rule); datasets are
 %% folded in list order so the last wins a collision.
--spec plot(chart(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
-plot(Chart, Area, Buf) ->
+-spec plot(chart(), #rect{}, {number(), number()}, tuition_render:buffer()) ->
+    tuition_render:buffer().
+plot(Chart, Area, {Ymin, Ymax}, Buf) ->
     Grid0 = tuition_braille:new(Area),
     {PW, PH} = tuition_braille:dims(Grid0),
     WinCount = resolve_window(maps:get(window, Chart, auto), PW),
     XAlign = maps:get(x_align, Chart, left),
     Series = [prepare(D, WinCount) || D <- maps:get(datasets, Chart, [])],
-    {Ymin, Ymax} = resolve_bounds(maps:get(y_bounds, Chart, auto), Series),
     Grid1 = lists:foldl(
         fun({Colour, Marker, Window}, G) ->
             Col0 = col_offset(XAlign, PW, length(Window)),
@@ -362,10 +381,10 @@ window(Data, N) ->
 %% placed `Area'-relative through {@link tuition_widget:put_line/6}, so a too-small
 %% area degrades to just the part of the frame that fits (the plot rect then coming
 %% back degenerate, drawn as nothing by {@link render/3}).
--spec draw_frame(chart(), #rect{}, tuition_render:buffer()) ->
+-spec draw_frame(chart(), #rect{}, {number(), number()}, tuition_render:buffer()) ->
     {#rect{}, tuition_render:buffer()}.
-draw_frame(Chart, #rect{w = W} = Area, Buf) ->
-    #layout{l = L, ph = PH, plot = Plot} = Layout = layout(Chart, Area),
+draw_frame(Chart, #rect{w = W} = Area, Bounds, Buf) ->
+    #layout{l = L, ph = PH, plot = Plot} = Layout = layout(Chart, Area, Bounds),
     Style = maps:get(axis_style, Chart, #{}),
     %% y-axis up the axis column (`L'), every row above the corner.
     Buf1 = lists:foldl(
@@ -383,7 +402,7 @@ draw_frame(Chart, #rect{w = W} = Area, Buf) ->
         seq(L + 1, W - 1)
     ),
     Buf3 = tuition_widget:put_line(Buf2, Area, L, PH, <<?CORNER/utf8>>, Style),
-    Buf4 = draw_ticks(Chart, Area, Layout, Style, Buf3),
+    Buf4 = draw_ticks(Chart, Area, Layout, Bounds, Style, Buf3),
     Buf5 = draw_x_labels(Chart, Area, Layout, Style, Buf4),
     Buf6 = draw_titles(Chart, Area, Layout, Style, Buf5),
     {Plot, Buf6}.
@@ -392,10 +411,10 @@ draw_frame(Chart, #rect{w = W} = Area, Buf) ->
 %% labels claim left of the axis, how many rows the x-labels and x-title claim
 %% below it, and the plot rect that remains. With no labelling keys set this is a
 %% one-column, one-row inset — the bare frame, byte-for-byte as before.
--spec layout(chart(), #rect{}) -> #layout{}.
-layout(Chart, #rect{x = X, y = Y, w = W, h = H}) ->
+-spec layout(chart(), #rect{}, {number(), number()}) -> #layout{}.
+layout(Chart, #rect{x = X, y = Y, w = W, h = H}, Bounds) ->
     YTitleW = has_text(y_title, Chart),
-    TickW = tick_gutter(Chart),
+    TickW = tick_gutter(Chart, Bounds),
     L = YTitleW + TickW,
     XLabelH = has_list(x_labels, Chart),
     XTitleH = has_text(x_title, Chart),
@@ -433,50 +452,38 @@ has_list(Key, Chart) ->
 %%% -- y-ticks ---------------------------------------------------------
 
 %% The width of the y-tick gutter: the widest label the ticks will render, in
-%% columns, or 0 when ticks are off. Sized from a *superset* of the plotted values
-%% — explicit bounds verbatim, else the whole datasets' range (which contains any
-%% windowed range) — so the gutter is always wide enough for the labels {@link
-%% draw_ticks/5} actually draws from the live bounds, without the circular
-%% dependency of sizing a gutter from bounds that depend on the gutter's width.
--spec tick_gutter(chart()) -> non_neg_integer().
-tick_gutter(Chart) ->
+%% columns, or 0 when ticks are off. Sized from the *same* {@link chart_bounds/3}
+%% the labels are drawn from, so the gutter fits every label exactly — no
+%% truncation, and no dependence on the gutter's own width (the bounds are resolved
+%% at the pre-gutter width, so this does not feed back on itself).
+-spec tick_gutter(chart(), {number(), number()}) -> non_neg_integer().
+tick_gutter(Chart, Bounds) ->
     case maps:get(y_ticks, Chart, none) of
-        none ->
-            0;
-        auto ->
-            {Min, Max} = gutter_bounds(Chart),
-            widest([fmt_num(V) || V <- auto_ticks(Min, Max)]);
-        List when is_list(List) ->
-            widest([fmt_num(V) || V <- List, is_number(V)])
+        none -> 0;
+        Spec -> widest([fmt_num(V) || V <- tick_values(Spec, Bounds)])
     end.
 
-%% The bounds used only to *size* the tick gutter: explicit `{Min, Max}' verbatim,
-%% else the min/max across every dataset's full data (a superset of any window).
--spec gutter_bounds(chart()) -> {number(), number()}.
-gutter_bounds(Chart) ->
-    case maps:get(y_bounds, Chart, auto) of
-        {Min, Max} when is_number(Min), is_number(Max) ->
-            {Min, Max};
-        _ ->
-            Vals = [
-                V
-             || D <- maps:get(datasets, Chart, []), V <- maps:get(data, D, []), is_number(V)
-            ],
-            case Vals of
-                [] -> {0, 1};
-                _ -> {lists:min(Vals), lists:max(Vals)}
-            end
-    end.
+%% The values the y-ticks label: `auto' derives max/mid/min from the bounds, an
+%% explicit list is taken verbatim (dropping any non-numbers).
+-spec tick_values(auto | [number()], {number(), number()}) -> [number()].
+tick_values(auto, {Min, Max}) -> auto_ticks(Min, Max);
+tick_values(List, _Bounds) when is_list(List) -> [V || V <- List, is_number(V)].
 
 %% Draw the y-tick labels, right-aligned against the y-axis at the cell row each
-%% value maps to. Values come from the *live* bounds (the same {@link
-%% resolve_bounds/2} the plot uses), so a label sits level with the curve height it
-%% denotes; ties on a row (a short plot, or a flat series) collapse to one label.
-%% Each label is truncated to the gutter so it can never overrun the axis.
--spec draw_ticks(chart(), #rect{}, #layout{}, tuition_render:style(), tuition_render:buffer()) ->
-    tuition_render:buffer().
+%% value maps to. Values and bounds are the same {@link chart_bounds/3} the plot
+%% uses, so a label sits level with the curve height it denotes and — the gutter
+%% having been sized from these very labels — always fits without truncation. Ties
+%% on a row (a short plot, or a flat series) collapse to one label.
+-spec draw_ticks(
+    chart(),
+    #rect{},
+    #layout{},
+    {number(), number()},
+    tuition_render:style(),
+    tuition_render:buffer()
+) -> tuition_render:buffer().
 draw_ticks(
-    Chart, Area, #layout{ytitle_w = YTitleW, tick_w = TickW, ph = PH, plot = Plot}, Style, Buf
+    Chart, Area, #layout{ytitle_w = YTitleW, tick_w = TickW, ph = PH}, {Ymin, Ymax}, Style, Buf
 ) ->
     case maps:get(y_ticks, Chart, none) of
         none ->
@@ -484,16 +491,11 @@ draw_ticks(
         _ when TickW =:= 0; PH =:= 0 ->
             Buf;
         Spec ->
-            {Ymin, Ymax} = live_bounds(Chart, Plot),
-            Values =
-                case Spec of
-                    auto -> auto_ticks(Ymin, Ymax);
-                    List -> [V || V <- List, is_number(V)]
-                end,
+            Values = tick_values(Spec, {Ymin, Ymax}),
             Rows = dedup_rows([{value_to_row(V, Ymin, Ymax, PH), V} || V <- Values]),
             lists:foldl(
                 fun({Row, V}, B) ->
-                    Label = tuition_widget:truncate(fmt_num(V), TickW),
+                    Label = fmt_num(V),
                     LW = tuition_widget:display_width(Label),
                     DCol = YTitleW + (TickW - LW),
                     tuition_widget:put_line(B, Area, DCol, Row, Label, Style)
@@ -524,15 +526,6 @@ dedup_rows([{Row, V} | Rest], Seen, Acc) ->
         true -> dedup_rows(Rest, Seen, Acc);
         false -> dedup_rows(Rest, Seen#{Row => true}, [{Row, V} | Acc])
     end.
-
-%% The bounds the plot will actually use, recomputed from the datasets windowed to
-%% this plot's sub-pixel width — deterministically equal to what {@link plot/3}
-%% resolves, so the ticks and the curve share one scale.
--spec live_bounds(chart(), #rect{}) -> {number(), number()}.
-live_bounds(Chart, #rect{w = PWCells}) ->
-    WinCount = resolve_window(maps:get(window, Chart, auto), PWCells * 2),
-    Series = [prepare(D, WinCount) || D <- maps:get(datasets, Chart, [])],
-    resolve_bounds(maps:get(y_bounds, Chart, auto), Series).
 
 %%% -- x-labels --------------------------------------------------------
 

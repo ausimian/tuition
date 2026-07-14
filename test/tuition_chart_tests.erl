@@ -267,6 +267,27 @@ y_ticks_align_with_the_curve_scale_test() ->
     ?assertEqual($7, ch(B, 0, 0)),
     ?assertEqual($3, ch(B, 0, 3)).
 
+y_ticks_auto_gutter_fits_a_fractional_windowed_midpoint_test() ->
+    %% A narrow window near a large value yields a fractional midpoint ("999.5")
+    %% whose label is wider than either integer endpoint. The gutter is sized from
+    %% the live labels, so it fits "999.5" in full rather than truncating to "999.".
+    Cfg = #{
+        datasets => [#{data => lists:seq(0, 1000)}],
+        axes => true,
+        y_ticks => auto,
+        window => 2,
+        x_align => right
+    },
+    B = render(Cfg, 12, 5),
+    %% widest label "999.5" -> gutter 5 -> axis in column 5.
+    ?assertEqual(?V_AXIS, ch(B, 5, 0)),
+    %% the midpoint label, intact across the gutter on its row.
+    ?assertEqual($9, ch(B, 0, 2)),
+    ?assertEqual($9, ch(B, 1, 2)),
+    ?assertEqual($9, ch(B, 2, 2)),
+    ?assertEqual($., ch(B, 3, 2)),
+    ?assertEqual($5, ch(B, 4, 2)).
+
 y_ticks_need_axes_test() ->
     %% Ticks are axis chrome — without the frame they reserve no gutter and the
     %% plot uses the whole area (a lone max point at the top-left cell).
