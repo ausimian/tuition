@@ -51,7 +51,9 @@
 
 -include("tuition_caps.hrl").
 
--export([baseline/0, probe/1, probe/2, parse_replies/1, decode_replies/1, apply_colorterm/2]).
+-export([
+    baseline/0, probe/1, probe/2, resolve/2, parse_replies/1, decode_replies/1, apply_colorterm/2
+]).
 
 -type caps() :: #caps{}.
 -export_type([caps/0]).
@@ -108,6 +110,38 @@ probe(Handle, Timeout) ->
         ok -> decode_replies(read_until_sentinel(Handle, Timeout, <<>>));
         {error, _} -> {baseline(), <<>>}
     end.
+
+%% @doc Resolve a capability set for a host from its option map, probing the
+%% terminal only when neither an explicit profile nor an opt-out is given. This is
+%% the hook a host threads through so a backend that cannot answer the interactive
+%% probe can skip it: on an asynchronous or high-latency transport the query
+%% round-trip overruns the read window ({@link probe/2}'s), so the probe both fails
+%% <em>and</em> corrupts input — late replies arrive after the loop starts and, in
+%% the case of the DECRQSS truecolor read-back (a DCS, byte-identical to an
+%% `Alt'+`Shift'+`P' keystroke), decode as a burst of fake keys. Returns
+%% `{Caps, Residue}' in the same shape as {@link probe/2}:
+%%
+%% <ul>
+%%   <li>`#{caps := Caps}' — use that profile verbatim; no queries are written and
+%%       the residue is empty.</li>
+%%   <li>`#{probe := false}' — skip the probe and use {@link baseline/0}; again no
+%%       queries and an empty residue.</li>
+%%   <li>otherwise — {@link probe/1} the terminal (the default). An explicit `caps'
+%%       wins over `probe', which wins over the probe default.</li>
+%% </ul>
+%%
+%% When probing is skipped <em>no</em> terminal queries are emitted, so no stray
+%% reply can be injected as input. The `COLORTERM' env fold stays the host's job
+%% (see {@link apply_colorterm/2}), layered on top of a probed or baseline result
+%% but not a caller-supplied one — the host's environment describes the host, not
+%% the (possibly remote) terminal the caps were handed for.
+-spec resolve(tuition_term:handle(), map()) -> {caps(), binary()}.
+resolve(_Handle, #{caps := Caps}) ->
+    {Caps, <<>>};
+resolve(_Handle, #{probe := false}) ->
+    {baseline(), <<>>};
+resolve(Handle, _Opts) ->
+    probe(Handle).
 
 %% @doc Fold a `COLORTERM' environment value into a capability set. Some terminals
 %% advertise 24-bit colour via `COLORTERM=truecolor'|`24bit' yet do not answer the

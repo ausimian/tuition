@@ -75,13 +75,21 @@ start() -> start(#{}).
 %% module (default {@link tuition_term_local}); the whole `Opts' map is passed
 %% through to the backend's `open/1', so a backend reads its own keys from it.
 %% Selecting a backend this way is also how the loop is driven in tests.
+%%
+%% Capability detection can be steered for a backend that cannot answer the
+%% interactive probe — an asynchronous or high-latency transport where the query
+%% round-trip overruns the read window (issue #16): `probe => false' skips the
+%% probe for the {@link tuition_caps:baseline/0} set, and `caps => Caps' supplies a
+%% fixed {@link tuition_caps:caps()} profile verbatim. Either way no terminal
+%% queries are written, so no stray reply can leak into input; the default (neither
+%% key) still probes. See {@link tuition_caps:resolve/2}.
 -spec start(Opts :: map()) -> ok | {error, term()}.
 start(Opts) ->
     Backend = maps:get(backend, Opts, tuition_term_local),
     case tuition_term:open(Backend, Opts) of
         {ok, Handle} ->
             try
-                run(Handle)
+                run(Handle, Opts)
             after
                 tuition_term:close(Handle)
             end;
@@ -91,17 +99,18 @@ start(Opts) ->
 
 %%% -- render/input loop -----------------------------------------------
 
-%% Probe capabilities, then paint the first frame and hand off to the poll loop.
-%% The probe reads its replies off the input channel before the loop starts, so
-%% there is no contention. Any non-reply bytes it read back (a key pressed during
-%% the probe window) are decoded up front and replayed as the loop's first input
-%% batch, seeding its parser state, so an early keystroke is honoured rather than
-%% lost. The first frame is drawn onto a blank baseline behind a full-screen
-%% erase, so every non-blank cell of the pane lands on a guaranteed-clean
-%% alternate screen.
--spec run(tuition_term:handle()) -> ok | {error, term()}.
-run(Handle) ->
-    {Caps, Residue} = probe_caps(Handle),
+%% Resolve capabilities (probing unless the host opted out via `Opts'), then paint
+%% the first frame and hand off to the poll loop. When probing, the replies are read
+%% off the input channel before the loop starts, so there is no contention, and any
+%% non-reply bytes read back (a key pressed during the probe window) are decoded up
+%% front and replayed as the loop's first input batch, seeding its parser state, so
+%% an early keystroke is honoured rather than lost. A host that supplied fixed caps
+%% (or `probe => false') writes no queries, so there is no residue to replay. The
+%% first frame is drawn onto a blank baseline behind a full-screen erase, so every
+%% non-blank cell of the pane lands on a guaranteed-clean alternate screen.
+-spec run(tuition_term:handle(), map()) -> ok | {error, term()}.
+run(Handle, Opts) ->
+    {Caps, Residue} = probe_caps(Handle, Opts),
     {Events0, InputSt0} = tuition_input:parse(Residue, tuition_input:new()),
     Ui = #ui{caps = Caps},
     case tuition_term:size(Handle) of
@@ -139,16 +148,23 @@ resume(Handle, Prev, Size, InputSt, Ui, Events) ->
             end
     end.
 
-%% Probe the terminal, then fold in the `COLORTERM' environment hint: some
-%% terminals advertise 24-bit colour through that variable but do not answer the
-%% DECRQSS truecolor probe. The reply-based probe stays a pure function of the
-%% terminal ({@link tuition_caps:probe/1}); reading the environment is the host's
-%% job, so it happens here rather than inside the probe. Returns `{Caps, Residue}':
-%% any non-reply bytes the probe read (a key pressed during the probe window) are
-%% passed back so {@link run/1} can replay them instead of dropping the keystroke.
--spec probe_caps(tuition_term:handle()) -> {tuition_caps:caps(), binary()}.
-probe_caps(Handle) ->
-    {Caps, Residue} = tuition_caps:probe(Handle),
+%% Resolve the capabilities for this run from `Opts' (see {@link
+%% tuition_caps:resolve/2}), then, on a probed or baseline result, fold in the
+%% `COLORTERM' environment hint: some terminals advertise 24-bit colour through that
+%% variable but do not answer the DECRQSS truecolor probe. The reply-based probe
+%% stays a pure function of the terminal ({@link tuition_caps:probe/1}); reading the
+%% environment is the host's job, so it happens here rather than inside the probe.
+%% A caller-supplied `caps' profile is used verbatim — no probe and no `COLORTERM'
+%% fold, since the host's environment describes the host process, not the (possibly
+%% remote) terminal the caps were handed for. Returns `{Caps, Residue}': any
+%% non-reply bytes a probe read (a key pressed during the probe window) are passed
+%% back so {@link run/2} can replay them instead of dropping the keystroke; a skipped
+%% probe leaves the residue empty.
+-spec probe_caps(tuition_term:handle(), map()) -> {tuition_caps:caps(), binary()}.
+probe_caps(_Handle, #{caps := Caps}) ->
+    {Caps, <<>>};
+probe_caps(Handle, Opts) ->
+    {Caps, Residue} = tuition_caps:resolve(Handle, Opts),
     {tuition_caps:apply_colorterm(os:getenv("COLORTERM"), Caps), Residue}.
 
 %% One iteration: poll input, re-query the terminal size (cheap, and the only

@@ -1,5 +1,14 @@
 ### Added
 
+- **Fixed capability profiles** — a host can now skip the interactive terminal
+  capability probe and supply a known capability set instead, for an asynchronous
+  or high-latency backend (such as a Livebook/xterm.js terminal) where the probe's
+  query round-trip overruns its read window and late replies leak into input as
+  fake keystrokes. `tuition_caps:resolve/2` reads `caps => Caps` (use that
+  `tuition_caps:caps()` profile verbatim) or `probe => false` (use
+  `tuition_caps:baseline/0`), and otherwise probes the terminal as before;
+  `tuition_demo:start/1` threads both options through. When probing is skipped no
+  terminal queries are written, so no stray reply can be injected as a keystroke.
 - **`tuition_tabs`** — a stateless tab-bar widget: a horizontal row of titles
   separated by a divider glyph with one highlighted, so a multi-pane UI can show
   the panes it switches between and which one has focus. Takes `titles` (a list
