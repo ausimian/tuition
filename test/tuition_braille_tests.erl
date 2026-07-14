@@ -152,3 +152,149 @@ dims_reports_the_sub_pixel_extent_test() ->
 
 blank_grid_renders_nothing_test() ->
     ?assertEqual(buf(4, 3), render(grid(4, 3), 4, 3)).
+
+%%% -- rectangles ------------------------------------------------------
+
+rect_draws_the_outline_not_the_interior_test() ->
+    %% A 3x3 sub-pixel box (corners (1,1) and (3,3)) lights its perimeter and
+    %% leaves the interior sub-pixel (2,2) dark.
+    G = tuition_braille:rect(grid(2, 1), 1, 1, 3, 3, default),
+    Expected = lists:sort([
+        {1, 1}, {2, 1}, {3, 1}, {1, 2}, {3, 2}, {1, 3}, {2, 3}, {3, 3}
+    ]),
+    ?assertEqual(Expected, lit_dots(G, 2, 1)),
+    ?assertNot(lists:member({2, 2}, lit_dots(G, 2, 1))).
+
+rect_is_corner_order_independent_test() ->
+    %% The rectangle is the bounding box of the two corners — any ordering of the
+    %% opposite corners draws the same outline.
+    A = tuition_braille:rect(grid(2, 1), 1, 1, 3, 3, default),
+    B = tuition_braille:rect(grid(2, 1), 3, 3, 1, 1, default),
+    C = tuition_braille:rect(grid(2, 1), 3, 1, 1, 3, default),
+    ?assertEqual(lit_dots(A, 2, 1), lit_dots(B, 2, 1)),
+    ?assertEqual(lit_dots(A, 2, 1), lit_dots(C, 2, 1)).
+
+rect_with_coincident_corners_is_a_dot_test() ->
+    %% A zero-extent rectangle degenerates to the single sub-pixel of its corner.
+    G = tuition_braille:rect(grid(2, 1), 2, 2, 2, 2, default),
+    ?assertEqual([{2, 2}], lit_dots(G, 2, 1)).
+
+rect_colours_the_cells_test() ->
+    %% Every lit cell of the outline takes the rectangle's colour.
+    G = tuition_braille:rect(grid(2, 1), 1, 1, 3, 3, 5),
+    B = render(G, 2, 1),
+    ?assertMatch(#cell{fg = 5}, cell(B, 0, 0)),
+    ?assertMatch(#cell{fg = 5}, cell(B, 1, 0)).
+
+%%% -- circles ---------------------------------------------------------
+
+circle_of_zero_radius_is_the_centre_dot_test() ->
+    G = tuition_braille:circle(grid(2, 1), 2, 2, 0, default),
+    ?assertEqual([{2, 2}], lit_dots(G, 2, 1)).
+
+circle_radius_one_is_the_four_axis_points_test() ->
+    %% The smallest ring: the four sub-pixels one step from the centre on each
+    %% axis, the centre itself left dark.
+    G = tuition_braille:circle(grid(2, 1), 2, 2, 1, default),
+    ?assertEqual(lists:sort([{1, 2}, {3, 2}, {2, 1}, {2, 3}]), lit_dots(G, 2, 1)),
+    ?assertNot(lists:member({2, 2}, lit_dots(G, 2, 1))).
+
+circle_radius_two_walks_the_octants_test() ->
+    %% Radius 2 exercises more than one midpoint step: the full ring about centre
+    %% (3,4) — the four axis points plus the eight one-off-axis points — with the
+    %% interior dark. Every lit point sits a true distance ~2 from the centre.
+    G = tuition_braille:circle(grid(4, 3), 3, 4, 2, default),
+    Expected = lists:sort([
+        {1, 3},
+        {1, 4},
+        {1, 5},
+        {2, 2},
+        {2, 6},
+        {3, 2},
+        {3, 6},
+        {4, 2},
+        {4, 6},
+        {5, 3},
+        {5, 4},
+        {5, 5}
+    ]),
+    ?assertEqual(Expected, lit_dots(G, 4, 3)),
+    ?assertNot(lists:member({3, 4}, lit_dots(G, 4, 3))).
+
+circle_radius_three_stays_on_the_perimeter_test() ->
+    %% Regression for the midpoint init: the walk must not pull X in a row too
+    %% early. One row above the centre (y = 1) the perimeter pixel is (R,1) — here
+    %% (8,6) at offset (+3,+1) from centre (5,5) — not the inward (7,6) at (+2,+1)
+    %% that an `Err = 0' start would have lit instead.
+    G = tuition_braille:circle(grid(5, 3), 5, 5, 3, default),
+    Lit = lit_dots(G, 5, 3),
+    ?assert(lists:member({8, 6}, Lit)),
+    ?assertNot(lists:member({7, 6}, Lit)).
+
+circle_clips_points_off_the_grid_test() ->
+    %% Centred on a corner, only the arc that lands on-grid is drawn; the two
+    %% points that fall to negative sub-pixels are dropped by set/4.
+    G = tuition_braille:circle(grid(2, 1), 0, 0, 1, default),
+    ?assertEqual(lists:sort([{1, 0}, {0, 1}]), lit_dots(G, 2, 1)).
+
+circle_partly_off_grid_still_draws_its_arc_test() ->
+    %% A radius that reaches past the field but whose ring still crosses it draws
+    %% the on-grid arc — the bound only skips circles that miss the field entirely.
+    G = tuition_braille:circle(grid(2, 1), 0, 0, 3, default),
+    ?assertNotEqual([], lit_dots(G, 2, 1)).
+
+circle_enclosing_the_grid_draws_nothing_test() ->
+    %% A radius so large the whole field sits inside the ring can't put a dot
+    %% on-grid, so the walk is skipped rather than run O(R) times over discards.
+    G = tuition_braille:circle(grid(2, 1), 2, 2, 1000, default),
+    ?assertEqual([], lit_dots(G, 2, 1)).
+
+circle_far_from_the_grid_draws_nothing_test() ->
+    %% A centre far outside the field with a radius too short to reach back is
+    %% likewise skipped — the field lies entirely beyond the ring.
+    G = tuition_braille:circle(grid(2, 1), 100, 100, 5, default),
+    ?assertEqual([], lit_dots(G, 2, 1)).
+
+circle_reaching_a_corner_is_not_skipped_test() ->
+    %% Regression: the reaches-field bound must allow for the rasterizer placing
+    %% pixels up to a sub-pixel inside the true ring. On a 4x4 field, circle centred
+    %% (1,1) radius 3 has every corner strictly inside the exact ring (the farthest,
+    %% (3,3), is √8 ≈ 2.83 < 3), yet the walk rounds the 45° pixel onto that corner
+    %% — so the bound must not skip it, and (3,3) stays lit.
+    G = tuition_braille:circle(grid(2, 1), 1, 1, 3, default),
+    ?assertEqual([{3, 3}], lit_dots(G, 2, 1)).
+
+%%% -- shape helpers ---------------------------------------------------
+
+%% The sorted list of lit sub-pixels `{GX, GY}' of a grid, decoded from the
+%% rendered braille glyphs — a blank cell contributes no dots.
+lit_dots(Grid, W, H) ->
+    B = render(Grid, W, H),
+    lists:sort([
+        {GX, GY}
+     || GX <- lists:seq(0, 2 * W - 1),
+        GY <- lists:seq(0, 4 * H - 1),
+        dot_lit(B, GX, GY)
+    ]).
+
+%% Whether sub-pixel `{GX, GY}' is lit in the rendered buffer: decode its cell's
+%% glyph back to an 8-bit mask (a non-braille cell — a blank space — is mask 0) and
+%% test the dot's bit.
+dot_lit(B, GX, GY) ->
+    Mask =
+        case ch(B, GX div 2, GY div 4) of
+            C when C >= 16#2800, C =< 16#28FF -> C - 16#2800;
+            _ -> 0
+        end,
+    Mask band dot_bit(GX rem 2, GY rem 4) =/= 0.
+
+%% The 8-bit mask of one sub-pixel within its cell — the standard braille dot
+%% numbering, mirrored from tuition_braille's private table.
+dot_bit(0, 0) -> 16#01;
+dot_bit(0, 1) -> 16#02;
+dot_bit(0, 2) -> 16#04;
+dot_bit(1, 0) -> 16#08;
+dot_bit(1, 1) -> 16#10;
+dot_bit(1, 2) -> 16#20;
+dot_bit(0, 3) -> 16#40;
+dot_bit(1, 3) -> 16#80.
