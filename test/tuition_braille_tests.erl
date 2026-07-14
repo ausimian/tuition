@@ -255,6 +255,15 @@ circle_far_from_the_grid_draws_nothing_test() ->
     G = tuition_braille:circle(grid(2, 1), 100, 100, 5, default),
     ?assertEqual([], lit_dots(G, 2, 1)).
 
+circle_reaching_a_corner_is_not_skipped_test() ->
+    %% Regression: the reaches-field bound must allow for the rasterizer placing
+    %% pixels up to a sub-pixel inside the true ring. On a 4x4 field, circle centred
+    %% (1,1) radius 3 has every corner strictly inside the exact ring (the farthest,
+    %% (3,3), is √8 ≈ 2.83 < 3), yet the walk rounds the 45° pixel onto that corner
+    %% — so the bound must not skip it, and (3,3) stays lit.
+    G = tuition_braille:circle(grid(2, 1), 1, 1, 3, default),
+    ?assertEqual([{3, 3}], lit_dots(G, 2, 1)).
+
 %%% -- shape helpers ---------------------------------------------------
 
 %% The sorted list of lit sub-pixels `{GX, GY}' of a grid, decoded from the

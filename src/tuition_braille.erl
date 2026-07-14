@@ -234,12 +234,17 @@ circle(#grid{rect = #rect{w = W, h = H}} = Grid, CX, CY, R, Colour) ->
         false -> Grid
     end.
 
-%% Whether the ring of radius `R' about `{CX, CY}' can cross the `GW'×`GH' field at
-%% all: true iff `R' lies between the nearest and farthest distances from the
-%% centre to the field's cells (compared squared, to stay in integers). Outside
-%% that band every cell is wholly inside the ring (`R' too big) or wholly outside
-%% it (`R' too small), so no dot lands on-grid and the O(R) walk would only produce
-%% discards — bounding the walk against the field without dropping any visible arc.
+%% Whether the rasterized ring of radius `R' about `{CX, CY}' can light any cell of
+%% the `GW'×`GH' field: true iff the field's distance band — the nearest and
+%% farthest distances from the centre to its cells — overlaps the annulus the
+%% rasterizer actually paints. That annulus is `[R-1, R+1]', not the razor-thin
+%% true circle: the integer midpoint walk places each pixel within one sub-pixel of
+%% the exact ring, so a cell up to a sub-pixel *inside* the true circle can still be
+%% lit (e.g. the 45° pixel a large ring rounds inward to). Widening by that one
+%% sub-pixel is what keeps the bound from dropping an on-grid arc; comparisons stay
+%% squared to keep to integers. When the band and annulus are disjoint every cell
+%% is wholly inside the ring (`R' too big) or wholly beyond it (`R' too small), so
+%% the O(R) walk would only produce discards and is skipped.
 -spec reaches_field(integer(), integer(), integer(), integer(), integer()) -> boolean().
 reaches_field(_CX, _CY, _R, GW, GH) when GW =< 0; GH =< 0 ->
     false;
@@ -248,8 +253,12 @@ reaches_field(CX, CY, R, GW, GH) ->
     NearY = axis_gap(CY, GH - 1),
     FarX = max(abs(CX), abs(CX - (GW - 1))),
     FarY = max(abs(CY), abs(CY - (GH - 1))),
-    RSq = R * R,
-    RSq >= NearX * NearX + NearY * NearY andalso RSq =< FarX * FarX + FarY * FarY.
+    NearSq = NearX * NearX + NearY * NearY,
+    FarSq = FarX * FarX + FarY * FarY,
+    %% Annulus [R-1, R+1] (R >= 1 here, so R-1 >= 0) overlaps the band [Near, Far].
+    Inner = R - 1,
+    Outer = R + 1,
+    Inner * Inner =< FarSq andalso NearSq =< Outer * Outer.
 
 %% The gap from coordinate `C' to the nearest point of the inclusive span `[0, Hi]'
 %% — 0 when `C' is inside it, else the distance to the near edge.
