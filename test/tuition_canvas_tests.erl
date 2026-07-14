@@ -101,6 +101,17 @@ circle_draws_a_ring_test() ->
     ?assertEqual(16#2820, ch(B, 0, 0)),
     ?assertEqual(16#2862, ch(B, 1, 0)).
 
+circle_negative_radius_is_degenerate_test() ->
+    %% A negative radius floors to 0 (matching the kernel) — the centre dot only,
+    %% never mirrored into a positive-radius ring. Centre (2,2) over [0,4]x[0,4] on
+    %% a 2x1 area is sub-pixel (2,2): cell 1's top-left-column dot (0x04), cell 0
+    %% blank.
+    B = render(
+        #{x_bounds => {0, 4}, y_bounds => {0, 4}, shapes => [{circle, 2, 2, -1, default}]}, 2, 1
+    ),
+    ?assertEqual($\s, ch(B, 0, 0)),
+    ?assertEqual(16#2804, ch(B, 1, 0)).
+
 unknown_shapes_are_ignored_test() ->
     %% A forward-compatible caller may pass shapes an older build cannot draw; they
     %% are skipped, and the shapes around them still draw.

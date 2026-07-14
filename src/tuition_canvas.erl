@@ -191,15 +191,17 @@ frac(_V, _Lo, _Hi) -> 0.5.
 -spec scale(float(), pos_integer()) -> non_neg_integer().
 scale(Frac, Extent) -> round(Frac * (Extent - 1)).
 
-%% A radius in x-axis value units, expressed in sub-pixels: scaled by the x-axis'
-%% sub-pixels-per-value, floored at 0 and capped at the grid's diagonal extent so a
-%% pathological radius cannot drive an unbounded midpoint walk (a circle larger
-%% than the grid draws no more than the grid holds anyway). A degenerate x-range
-%% has no scale, so the radius collapses to 0.
+%% A radius in x-axis value units, expressed in sub-pixels: a negative radius is
+%% floored to 0 (a degenerate circle — {@link tuition_braille:circle/5} draws its
+%% centre dot; not mirrored into a positive ring), then scaled by the x-axis'
+%% sub-pixels-per-value and capped at the grid's diagonal extent so a pathological
+%% radius cannot drive an unbounded midpoint walk (a circle larger than the grid
+%% draws no more than the grid holds anyway). A degenerate x-range has no scale, so
+%% the radius collapses to 0.
 -spec radius(number(), #map{}) -> non_neg_integer().
 radius(R, #map{xmin = Xmin, xmax = Xmax, pw = PW, ph = PH}) when Xmax > Xmin ->
-    Rpx = round(abs(R) * (PW - 1) / (Xmax - Xmin)),
-    min(max(Rpx, 0), PW + PH);
+    Rpx = round(max(R, 0) * (PW - 1) / (Xmax - Xmin)),
+    min(Rpx, PW + PH);
 radius(_R, _Map) ->
     0.
 
