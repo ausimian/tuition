@@ -217,11 +217,46 @@ rect(Grid, X0, Y0, X1, Y1, Colour) ->
 %% them. `R =< 0' lights just the centre dot. Points off the field are dropped by
 %% {@link set/4}, so a circle larger than the grid, or centred near an edge, draws
 %% only the arc that lands on-grid.
+%%
+%% A circle that cannot touch the field at all — its radius so large the field is
+%% wholly enclosed, or (for a centre outside the field) so small the field lies
+%% entirely beyond it — is skipped without walking, so an unbounded radius can't
+%% stall the rasterizer the way an O(R) walk of discarded dots would. That covers
+%% the common footgun (a normally-placed centre with a runaway radius); for a
+%% centre placed far outside the field, keep `R' grid-scale, as {@link line/6} asks
+%% of its endpoints.
 -spec circle(grid(), integer(), integer(), integer(), colour()) -> grid().
 circle(Grid, CX, CY, R, Colour) when R =< 0 ->
     set(Grid, CX, CY, Colour);
-circle(Grid, CX, CY, R, Colour) ->
-    midpoint_circle(Grid, CX, CY, R, 0, 1 - R, Colour).
+circle(#grid{rect = #rect{w = W, h = H}} = Grid, CX, CY, R, Colour) ->
+    case reaches_field(CX, CY, R, W * 2, H * 4) of
+        true -> midpoint_circle(Grid, CX, CY, R, 0, 1 - R, Colour);
+        false -> Grid
+    end.
+
+%% Whether the ring of radius `R' about `{CX, CY}' can cross the `GW'×`GH' field at
+%% all: true iff `R' lies between the nearest and farthest distances from the
+%% centre to the field's cells (compared squared, to stay in integers). Outside
+%% that band every cell is wholly inside the ring (`R' too big) or wholly outside
+%% it (`R' too small), so no dot lands on-grid and the O(R) walk would only produce
+%% discards — bounding the walk against the field without dropping any visible arc.
+-spec reaches_field(integer(), integer(), integer(), integer(), integer()) -> boolean().
+reaches_field(_CX, _CY, _R, GW, GH) when GW =< 0; GH =< 0 ->
+    false;
+reaches_field(CX, CY, R, GW, GH) ->
+    NearX = axis_gap(CX, GW - 1),
+    NearY = axis_gap(CY, GH - 1),
+    FarX = max(abs(CX), abs(CX - (GW - 1))),
+    FarY = max(abs(CY), abs(CY - (GH - 1))),
+    RSq = R * R,
+    RSq >= NearX * NearX + NearY * NearY andalso RSq =< FarX * FarX + FarY * FarY.
+
+%% The gap from coordinate `C' to the nearest point of the inclusive span `[0, Hi]'
+%% — 0 when `C' is inside it, else the distance to the near edge.
+-spec axis_gap(integer(), integer()) -> non_neg_integer().
+axis_gap(C, _Hi) when C < 0 -> -C;
+axis_gap(C, Hi) when C > Hi -> C - Hi;
+axis_gap(_C, _Hi) -> 0.
 
 %% One midpoint-circle step, walking the first octant from `{R, 0}' toward the 45°
 %% diagonal: light the current point in all eight octants, stop once the walk

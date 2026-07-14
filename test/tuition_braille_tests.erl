@@ -237,6 +237,24 @@ circle_clips_points_off_the_grid_test() ->
     G = tuition_braille:circle(grid(2, 1), 0, 0, 1, default),
     ?assertEqual(lists:sort([{1, 0}, {0, 1}]), lit_dots(G, 2, 1)).
 
+circle_partly_off_grid_still_draws_its_arc_test() ->
+    %% A radius that reaches past the field but whose ring still crosses it draws
+    %% the on-grid arc — the bound only skips circles that miss the field entirely.
+    G = tuition_braille:circle(grid(2, 1), 0, 0, 3, default),
+    ?assertNotEqual([], lit_dots(G, 2, 1)).
+
+circle_enclosing_the_grid_draws_nothing_test() ->
+    %% A radius so large the whole field sits inside the ring can't put a dot
+    %% on-grid, so the walk is skipped rather than run O(R) times over discards.
+    G = tuition_braille:circle(grid(2, 1), 2, 2, 1000, default),
+    ?assertEqual([], lit_dots(G, 2, 1)).
+
+circle_far_from_the_grid_draws_nothing_test() ->
+    %% A centre far outside the field with a radius too short to reach back is
+    %% likewise skipped — the field lies entirely beyond the ring.
+    G = tuition_braille:circle(grid(2, 1), 100, 100, 5, default),
+    ?assertEqual([], lit_dots(G, 2, 1)).
+
 %%% -- shape helpers ---------------------------------------------------
 
 %% The sorted list of lit sub-pixels `{GX, GY}' of a grid, decoded from the
