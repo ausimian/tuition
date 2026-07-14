@@ -187,6 +187,15 @@ empty_field_without_placeholder_shows_a_bare_caret_test() ->
     {B, _} = render(#{}, 5, 1, tuition_input_field:new()),
     ?assertMatch(#cell{char = $\s, underline = true}, cell(B, 0, 0)).
 
+placeholder_keeps_the_field_background_test() ->
+    %% A styled input box: the base background must show through the placeholder
+    %% text and the caret over it, not leave holes.
+    Cfg = #{style => #{bg => 4}, placeholder => <<"hint">>},
+    {B, _} = render(Cfg, 6, 1, tuition_input_field:new()),
+    ?assertMatch(#cell{char = $h, bg = 4, underline = true}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $i, bg = 4}, cell(B, 1, 0)),
+    ?assertMatch(#cell{char = $t, bg = 4}, cell(B, 3, 0)).
+
 %%% -- rendering: mask -------------------------------------------------
 
 mask_hides_the_value_test() ->

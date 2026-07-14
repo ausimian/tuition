@@ -404,7 +404,7 @@ draw(Cfg, #rect{w = W} = Area, Buf, #input_state{cursor = Cursor, offset = Offse
     Buf1 = tuition_widget:fill(Buf, top_row(Area), Base),
     Buf2 =
         case Display of
-            [] -> draw_placeholder(Cfg, Area, Buf1);
+            [] -> draw_placeholder(Cfg, Area, Buf1, Base);
             _ -> draw_value(Area, Buf1, Base, Display, Offset)
         end,
     draw_caret(Cfg, Area, Buf2, Base, Display, Offset, Cursor, W).
@@ -426,15 +426,16 @@ draw_value(Area, Buf, Base, Display, Offset) ->
     tuition_widget:put_line(Buf, Area, 0, 0, Glyphs, Base).
 
 %% Draw the placeholder (shown only while the value is empty) at column 0 in the
-%% placeholder style; nothing when no placeholder is configured.
--spec draw_placeholder(input_cfg(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
-draw_placeholder(Cfg, Area, Buf) ->
+%% placeholder style, over the base style so a configured field background shows
+%% through; nothing when no placeholder is configured.
+-spec draw_placeholder(input_cfg(), #rect{}, tuition_render:buffer(), tuition_render:style()) ->
+    tuition_render:buffer().
+draw_placeholder(Cfg, Area, Buf, Base) ->
     case to_bin(maps:get(placeholder, Cfg, <<>>)) of
         <<>> ->
             Buf;
         Placeholder ->
-            Style = maps:get(placeholder_style, Cfg, ?DEFAULT_PLACEHOLDER_STYLE),
-            tuition_widget:put_line(Buf, Area, 0, 0, Placeholder, Style)
+            tuition_widget:put_line(Buf, Area, 0, 0, Placeholder, placeholder_style(Cfg, Base))
     end.
 
 %% Overlay the caret: the glyph beneath it re-drawn with `cursor_style' merged onto
@@ -492,13 +493,21 @@ caret_on_blank(Cfg, [], Base) ->
         <<>> ->
             {<<" ">>, Base};
         Placeholder ->
-            {
-                first_cluster(Placeholder),
-                maps:get(placeholder_style, Cfg, ?DEFAULT_PLACEHOLDER_STYLE)
-            }
+            {first_cluster(Placeholder), placeholder_style(Cfg, Base)}
     end;
 caret_on_blank(_Cfg, _Display, Base) ->
     {<<" ">>, Base}.
+
+%% The placeholder text style, with the field's base style merged underneath so a
+%% configured field background (or other base attribute) shows through the
+%% placeholder cells: {@link tuition_widget:put_line/6} writes fresh cells rather
+%% than merging onto the base-filled row, so the base must be carried explicitly
+%% here — the way {@link tuition_list} draws its rows in the base style, and the
+%% caret merges onto the style beneath it. An explicit `placeholder_style' key wins
+%% over the base, so a caller can still override the background.
+-spec placeholder_style(input_cfg(), tuition_render:style()) -> tuition_render:style().
+placeholder_style(Cfg, Base) ->
+    maps:merge(Base, maps:get(placeholder_style, Cfg, ?DEFAULT_PLACEHOLDER_STYLE)).
 
 %%% -- helpers ---------------------------------------------------------
 
