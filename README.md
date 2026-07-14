@@ -61,6 +61,7 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | `tuition_chart`         | Chart widget — sub-cell trend curves (braille line/scatter). |
 | `tuition_canvas`        | Canvas widget — freeform braille drawing (line/points/rect/circle) in value coordinates. |
 | `tuition_tabs`          | Tabs widget — a horizontal row of titles with one selected. |
+| `tuition_input_field`   | Stateful text input — editable single-line field, caret + scroll. |
 | `tuition_pane`          | Pane **behaviour** — the contract the app shell hosts.      |
 | `tuition_shell`         | Application shell — hosts panes under one navigable UI.      |
 | `tuition_loop_term`     | Scripted terminal backend for headless testing (ratatui's `TestBackend` role). |
