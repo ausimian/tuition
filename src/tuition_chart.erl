@@ -371,13 +371,16 @@ draw_frame(Chart, #rect{w = W} = Area, Buf) ->
     Buf1 = lists:foldl(
         fun(Row, B) -> tuition_widget:put_line(B, Area, L, Row, <<?V_AXIS/utf8>>, Style) end,
         Buf,
-        lists:seq(0, PH - 1)
+        seq(0, PH - 1)
     ),
-    %% x-axis along the axis row (`PH'), every column right of the corner.
+    %% x-axis along the axis row (`PH'), every column right of the corner. `seq/2'
+    %% (not `lists:seq/2') so a gutter wider than the whole pane (`L' >= `W', e.g. a
+    %% one-column area with a y-title) yields an empty range and the frame degrades
+    %% to what fits, rather than crashing on an inverted range.
     Buf2 = lists:foldl(
         fun(Col, B) -> tuition_widget:put_line(B, Area, Col, PH, <<?H_AXIS/utf8>>, Style) end,
         Buf1,
-        lists:seq(L + 1, W - 1)
+        seq(L + 1, W - 1)
     ),
     Buf3 = tuition_widget:put_line(Buf2, Area, L, PH, <<?CORNER/utf8>>, Style),
     Buf4 = draw_ticks(Chart, Area, Layout, Style, Buf3),
@@ -591,9 +594,14 @@ draw_y_title(Chart, Area, #layout{ytitle_w = 1, ph = PH}, Style, Buf) when PH > 
     Clusters = clusters(to_bin(maps:get(y_title, Chart, <<>>))),
     Take = min(length(Clusters), PH),
     Start = (PH - Take) div 2,
+    %% Draw into the one-column gutter the title reserved, not the whole `Area',
+    %% so a two-column cluster (CJK/emoji) is truncated away by {@link
+    %% tuition_widget:put_line/6} rather than spilling its continuation onto the
+    %% y-axis in the next column.
+    Col = Area#rect{w = 1},
     {Buf1, _} = lists:foldl(
         fun(Cluster, {B, Row}) ->
-            {tuition_widget:put_line(B, Area, 0, Row, Cluster, Style), Row + 1}
+            {tuition_widget:put_line(B, Col, 0, Row, Cluster, Style), Row + 1}
         end,
         {Buf, Start},
         lists:sublist(Clusters, Take)
@@ -699,6 +707,13 @@ draw_legend_rows(Named, Inner, Style, Buf) ->
     Buf1.
 
 %%% -- text helpers ----------------------------------------------------
+
+%% `lists:seq/2' that yields `[]' for an inverted range (`To < From') instead of
+%% raising — so an axis loop over a degenerate span (a gutter as wide as, or wider
+%% than, the pane) draws nothing rather than crashing.
+-spec seq(integer(), integer()) -> [integer()].
+seq(From, To) when To < From -> [];
+seq(From, To) -> lists:seq(From, To).
 
 %% The widest of a list of chardata in display columns (0 for an empty list).
 -spec widest([unicode:chardata()]) -> non_neg_integer().

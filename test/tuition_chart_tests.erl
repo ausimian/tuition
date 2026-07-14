@@ -410,3 +410,25 @@ all_labelling_composes_test() ->
     B = render(Cfg, 30, 12),
     ?assertEqual({30, 12}, tuition_render:size(B)),
     ?assertEqual($v, ch(B, 0, 4)).
+
+%%% -- narrow-area hardening -------------------------------------------
+
+axes_with_y_title_on_a_one_column_area_do_not_crash_test() ->
+    %% The y-title's gutter makes the left inset as wide as the whole pane, so the
+    %% x-axis column range is empty — the frame must draw what fits, not crash.
+    B = render(#{datasets => [], axes => true, y_title => <<"v">>}, 1, 3),
+    ?assertEqual({1, 3}, tuition_render:size(B)).
+
+axes_with_wide_tick_gutter_on_a_narrow_area_do_not_crash_test() ->
+    %% A 3-wide tick gutter ("100") on a 2-column area likewise inverts the axis
+    %% range; it degrades rather than crashing.
+    B = render(#{datasets => [], axes => true, y_bounds => {0, 100}, y_ticks => auto}, 2, 3),
+    ?assertEqual({2, 3}, tuition_render:size(B)).
+
+y_title_wide_cluster_does_not_overwrite_the_axis_test() ->
+    %% A two-column cluster (CJK) is dropped rather than spilling its continuation
+    %% onto the y-axis in the next column: the axis glyph survives on the title row
+    %% and the title column stays blank there.
+    B = render(#{datasets => [], axes => true, y_title => <<"中"/utf8>>}, 4, 4),
+    ?assertEqual(?V_AXIS, ch(B, 1, 1)),
+    ?assertEqual($\s, ch(B, 0, 1)).
