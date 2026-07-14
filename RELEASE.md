@@ -1,5 +1,21 @@
 ### Added
 
+- **`tuition_barchart`** — a stateless widget for labeled categorical bars,
+  complementing the compact, unlabeled `tuition_sparkline` with a readable chart
+  of a handful of named quantities (per-scheduler utilisation, a memory-by-type
+  breakdown, top-N process bars). `vertical` (default) grows columns upward with
+  labels in a row beneath and each value printed on its base; `horizontal` grows
+  bars rightward, one per row, with the label in a left column and the value
+  right-aligned in a right column so a top-N list's numbers align. Bars share one
+  scale (`max` `auto` or an explicit ceiling) and use the eighth-block sub-cell
+  fill (the sparkline's set drawn bottom-up, the gauge's drawn left-to-right), so
+  a value between two cells still shows its true length; over-`max` values clamp
+  and negative values count as zero. Each bar carries its own `value`, `label`,
+  glyph `style`, and an optional `text_value` to print something other than the
+  number (`"82%"`, `"1.2G"`, or `none` to print nothing); `bar_width` / `bar_gap`
+  size and space the bars, and `label_style` / `value_style` colour the text.
+  Bars past the far edge are clipped, never wrapped. Grouped bars are a later
+  enhancement.
 - **`tuition_clear`** — a stateless overlay primitive: it blanks a rect, resetting
   every cell to a plain space, so a modal popup / confirm dialog / help overlay
   drawn last in a frame starts from a clean slate instead of showing the content
