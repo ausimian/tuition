@@ -1,5 +1,14 @@
 ### Added
 
+- **`tuition_tabs`** — a stateless tab-bar widget: a horizontal row of titles
+  separated by a divider glyph with one highlighted, so a multi-pane UI can show
+  the panes it switches between and which one has focus. Takes `titles` (a list
+  of chardata) and a 0-based `selected` index, with configurable `style` /
+  `highlight_style`, `divider` glyph, per-title `padding`, and `title_align` for
+  the strip within its area. The row is clipped to the area — an overflowing tail
+  is truncated at the right edge, a wide glyph at the edge dropped whole rather
+  than split. Composes with `tuition_layout` (reserve a 1-row strip at the top of
+  a pane) and the `tuition_shell` focus model.
 - **`tuition_line_gauge`** — a stateless single-row gauge: a label followed by a
   thin horizontal line whose leading fraction is drawn `filled` and the rest
   `unfilled`, for dense dashboards where the full-height `tuition_gauge` is too

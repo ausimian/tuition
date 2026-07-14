@@ -58,6 +58,7 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | `tuition_gauge`         | Gauge widget — horizontal progress bar (sub-cell precision). |
 | `tuition_sparkline`     | Sparkline widget — compact bar chart of a numeric series.   |
 | `tuition_chart`         | Chart widget — sub-cell trend curves (braille line/scatter). |
+| `tuition_tabs`          | Tabs widget — a horizontal row of titles with one selected. |
 | `tuition_pane`          | Pane **behaviour** — the contract the app shell hosts.      |
 | `tuition_shell`         | Application shell — hosts panes under one navigable UI.      |
 | `tuition_loop_term`     | Scripted terminal backend for headless testing (ratatui's `TestBackend` role). |
