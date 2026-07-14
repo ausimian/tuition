@@ -250,9 +250,13 @@ degenerate_area_still_reconciles_state_test() ->
 %%% -- rendering: styling ----------------------------------------------
 
 unstyled_field_preserves_the_parent_background_test() ->
-    %% With no base style, the cells past the value keep a parent block's fill.
+    %% With no base style, the cells past the value keep a parent block's fill —
+    %% and so does the caret cell, which overlays cursor_style onto the parent
+    %% blank rather than punching a default-styled hole through it.
     Parent = tuition_widget:fill(buf(5, 1), rect(0, 0, 5, 1), #{bg => 3}),
     {B, _} = tuition_input_field:render(#{}, rect(0, 0, 5, 1), Parent, typed(<<"a">>)),
+    %% Caret at column 1 (end of "a"): parent bg kept, cursor underline added.
+    ?assertMatch(#cell{char = $\s, bg = 3, underline = true}, cell(B, 1, 0)),
     ?assertMatch(#cell{bg = 3}, cell(B, 3, 0)),
     ?assertMatch(#cell{bg = 3}, cell(B, 4, 0)).
 

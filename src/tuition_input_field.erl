@@ -60,9 +60,12 @@
 %%%
 %%% == The caret is a styled cell ==
 %%% The application owns (and hides) the hardware cursor, so the field draws its own
-%%% caret as a styled cell over the glyph beneath it — `cursor_style' overlaid on
-%%% that glyph (default: `underline', the one always-available attribute that shows
-%%% over a blank; a `reverse' block cursor awaits the richer style model of #8). An
+%%% caret as a styled cell: `cursor_style' is overlaid on whatever cell already sits
+%%% at the caret column — the value glyph, the placeholder glyph, or the blank an
+%%% unstyled field left transparent — preserving that cell's own style (a parent
+%%% block's background included) rather than punching a default-styled hole through
+%%% it. The default `cursor_style' is `underline', the one attribute always visible
+%%% over a blank (a `reverse' block cursor awaits the richer style model of #8). An
 %%% empty `cursor_style' draws no visible caret, which is how a caller marks the
 %%% field unfocused.
 %%%
@@ -90,6 +93,7 @@
 -module(tuition_input_field).
 
 -include("tuition_layout.hrl").
+-include("tuition_term.hrl").
 -include("tuition_widget.hrl").
 
 -export([new/0, render/4, handle/2, value/1, set_value/2, cursor/1]).
@@ -407,7 +411,7 @@ draw(Cfg, #rect{w = W} = Area, Buf, #input_state{cursor = Cursor, offset = Offse
             [] -> draw_placeholder(Cfg, Area, Buf1, Base);
             _ -> draw_value(Area, Buf1, Base, Display, Offset)
         end,
-    draw_caret(Cfg, Area, Buf2, Base, Display, Offset, Cursor, W).
+    draw_caret(Cfg, Area, Buf2, Display, Offset, Cursor, W).
 
 %% Draw the visible clusters, from the offset onward, as one run at column 0;
 %% {@link tuition_widget:put_line/6} truncates it to the field width, dropping a
@@ -438,65 +442,55 @@ draw_placeholder(Cfg, Area, Buf, Base) ->
             tuition_widget:put_line(Buf, Area, 0, 0, Placeholder, placeholder_style(Cfg, Base))
     end.
 
-%% Overlay the caret: the glyph beneath it re-drawn with `cursor_style' merged onto
-%% the style already there. When the caret would fall off the right edge (it should
-%% not after reconciliation, but guard anyway) nothing is drawn; when a wide glyph
-%% under the caret has only one column left, a space stands in so the caret still
-%% shows rather than being clipped to nothing.
+%% Overlay the caret onto the cell already at its column: merge `cursor_style' onto
+%% whatever the field just drew there — the value glyph, the placeholder glyph, or
+%% the (possibly parent-painted) blank an unstyled field left transparent — so the
+%% caret keeps the style beneath it instead of punching a default-styled hole
+%% through a coloured parent block. Reading the cell back also means the glyph and
+%% its clipping are already settled: a wide glyph that did not fit was never drawn
+%% (leaving a blank to underline), so there is no edge case to special-case here.
+%% The caret would only fall off the right edge if reconciliation failed to keep it
+%% in view; guard against it anyway.
 -spec draw_caret(
     input_cfg(),
     #rect{},
     tuition_render:buffer(),
-    tuition_render:style(),
     [{binary(), non_neg_integer()}],
     non_neg_integer(),
     non_neg_integer(),
     integer()
 ) -> tuition_render:buffer().
-draw_caret(Cfg, Area, Buf, Base, Display, Offset, Cursor, W) ->
+draw_caret(Cfg, #rect{x = X, y = Y}, Buf, Display, Offset, Cursor, W) ->
     CaretCol = width_between([Width || {_G, Width} <- Display], Offset, Cursor),
     case CaretCol < W of
         false ->
             Buf;
         true ->
-            {Glyph0, Under} = caret_glyph(Cfg, Display, Cursor, Base),
-            Glyph =
-                case CaretCol + tuition_widget:display_width(Glyph0) > W of
-                    true -> <<" ">>;
-                    false -> Glyph0
-                end,
-            Cursor0 = maps:get(cursor_style, Cfg, ?DEFAULT_CURSOR_STYLE),
-            tuition_widget:put_line(Buf, Area, CaretCol, 0, Glyph, maps:merge(Under, Cursor0))
+            CursorStyle = maps:get(cursor_style, Cfg, ?DEFAULT_CURSOR_STYLE),
+            overlay_cursor(Buf, X + CaretCol, Y, CursorStyle)
     end.
 
-%% The glyph the caret sits on and the style already under it: the value cluster at
-%% the caret; a space (in the base style) when the caret is past the last cluster;
-%% and, in the empty-value case, the placeholder's first cluster (in the
-%% placeholder style) so the caret rests on the hint rather than blanking it.
--spec caret_glyph(
-    input_cfg(), [{binary(), non_neg_integer()}], non_neg_integer(), tuition_render:style()
-) ->
-    {binary(), tuition_render:style()}.
-caret_glyph(Cfg, Display, Cursor, Base) ->
-    case Cursor < length(Display) of
-        true ->
-            {Glyph, _Width} = lists:nth(Cursor + 1, Display),
-            {Glyph, Base};
-        false ->
-            caret_on_blank(Cfg, Display, Base)
+%% Merge a style's set attributes onto the cell at `{X, Y}', leaving its glyph and
+%% any unset attributes as they are. `wide_cont' can never be the caret cell — the
+%% caret always lands on a cluster boundary, never the right half of a wide glyph —
+%% but it is handled defensively rather than assumed away.
+-spec overlay_cursor(
+    tuition_render:buffer(), non_neg_integer(), non_neg_integer(), tuition_render:style()
+) -> tuition_render:buffer().
+overlay_cursor(Buf, X, Y, Style) ->
+    case tuition_render:cell_at(Buf, X, Y) of
+        #cell{} = Cell -> tuition_render:put_cell(Buf, X, Y, apply_style(Cell, Style));
+        wide_cont -> Buf
     end.
 
--spec caret_on_blank(input_cfg(), [{binary(), non_neg_integer()}], tuition_render:style()) ->
-    {binary(), tuition_render:style()}.
-caret_on_blank(Cfg, [], Base) ->
-    case to_bin(maps:get(placeholder, Cfg, <<>>)) of
-        <<>> ->
-            {<<" ">>, Base};
-        Placeholder ->
-            {first_cluster(Placeholder), placeholder_style(Cfg, Base)}
-    end;
-caret_on_blank(_Cfg, _Display, Base) ->
-    {<<" ">>, Base}.
+-spec apply_style(#cell{}, tuition_render:style()) -> #cell{}.
+apply_style(Cell, Style) ->
+    Cell#cell{
+        fg = maps:get(fg, Style, Cell#cell.fg),
+        bg = maps:get(bg, Style, Cell#cell.bg),
+        bold = maps:get(bold, Style, Cell#cell.bold),
+        underline = maps:get(underline, Style, Cell#cell.underline)
+    }.
 
 %% The placeholder text style, with the field's base style merged underneath so a
 %% configured field background (or other base attribute) shows through the
@@ -552,15 +546,6 @@ grapheme_bin(GC) ->
     case unicode:characters_to_binary([GC]) of
         Bin when is_binary(Bin) -> Bin;
         _ -> <<>>
-    end.
-
-%% The first grapheme cluster of a non-empty binary (used to rest the caret on a
-%% placeholder's opening glyph).
--spec first_cluster(binary()) -> binary().
-first_cluster(Bin) ->
-    case clusters(Bin) of
-        [First | _] -> First;
-        [] -> <<" ">>
     end.
 
 -spec count_clusters(binary()) -> non_neg_integer().
