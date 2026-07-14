@@ -57,6 +57,7 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | `tuition_table`         | Stateful table widget — columns, header, selection, sort.   |
 | `tuition_gauge`         | Gauge widget — horizontal progress bar (sub-cell precision). |
 | `tuition_sparkline`     | Sparkline widget — compact bar chart of a numeric series.   |
+| `tuition_barchart`      | BarChart widget — labeled categorical bars (vertical/horizontal). |
 | `tuition_chart`         | Chart widget — sub-cell trend curves (braille line/scatter). |
 | `tuition_tabs`          | Tabs widget — a horizontal row of titles with one selected. |
 | `tuition_pane`          | Pane **behaviour** — the contract the app shell hosts.      |
