@@ -7,8 +7,17 @@
 %%% braille cells resolves **8× the vertical and 2× the horizontal** of the block
 %%% glyphs a {@link tuition_sparkline} draws with. This module is that grid — the
 %%% genuinely reusable kernel {@link tuition_chart} rasterizes trend curves onto,
-%%% and the freeform canvas (deferred) would draw shapes onto. It is ratatui's
-%%% `Grid'/`BrailleGrid': the pixel buffer under `Canvas' and `Chart'.
+%%% and the {@link tuition_canvas} widget draws freeform shapes onto. It is
+%%% ratatui's `Grid'/`BrailleGrid': the pixel buffer under `Canvas' and `Chart'.
+%%%
+%%% == Shape rasterizers ==
+%%% Alongside the single-dot {@link set/3}/{@link set/4}, the kernel offers three
+%%% straight/curved rasterizers a shape front-end ({@link tuition_canvas}) plots
+%%% with: {@link line/6} (Bresenham segment), {@link rect/6} (axis-aligned
+%%% rectangle outline) and {@link circle/5} (midpoint circle outline). Each takes
+%%% sub-pixel coordinates and lights every dot it crosses, dropping the ones
+%%% outside the field per {@link set/4}, so a shape may over-run the edge and the
+%%% visible part still draws.
 %%%
 %%% == Not a widget ==
 %%% Like {@link tuition_width}, this is an internal shared helper, not a {@link
@@ -50,7 +59,7 @@
 
 -include("tuition_layout.hrl").
 
--export([new/1, dims/1, set/3, set/4, line/6, render_into/2, render_into/3]).
+-export([new/1, dims/1, set/3, set/4, line/6, rect/6, circle/5, render_into/2, render_into/3]).
 
 %% A cell colour — the `fg' a braille cell paints its dots in. Mirrors the colour
 %% half of {@link tuition_render:style()}; `default' leaves the cell's foreground
@@ -186,6 +195,78 @@ bresenham(Grid, X, Y, X1, Y1, DX, DY, SX, SY, Err, Colour) ->
                 end,
             bresenham(Grid1, X2, Y2, X1, Y1, DX, DY, SX, SY, ErrB, Colour)
     end.
+
+%% @doc Rasterize the outline of the axis-aligned rectangle spanned by the two
+%% opposite corners `{X0, Y0}' and `{X1, Y1}' in `Colour' — its four edges, no
+%% fill. The corners may be given in any order (the rectangle is the bounding box
+%% of the two points); a degenerate span draws the line or dot the corners
+%% describe. Each edge is a straight {@link line/6}, so the same per-sub-pixel
+%% clipping applies: an edge past the field is drawn only where it lands on-grid.
+-spec rect(grid(), integer(), integer(), integer(), integer(), colour()) -> grid().
+rect(Grid, X0, Y0, X1, Y1, Colour) ->
+    G1 = line(Grid, X0, Y0, X1, Y0, Colour),
+    G2 = line(G1, X0, Y1, X1, Y1, Colour),
+    G3 = line(G2, X0, Y0, X0, Y1, Colour),
+    line(G3, X1, Y0, X1, Y1, Colour).
+
+%% @doc Rasterize the outline of the circle centred at `{CX, CY}' with radius `R'
+%% sub-pixels in `Colour' — the integer midpoint-circle algorithm, mirroring each
+%% computed point across the eight octants. `R' is measured in sub-pixels (the
+%% axes share the field's own scale), so the result is geometrically round on the
+%% sub-grid; a caller whose value axes differ in scale maps `R' through one of
+%% them. `R =< 0' lights just the centre dot. Points off the field are dropped by
+%% {@link set/4}, so a circle larger than the grid, or centred near an edge, draws
+%% only the arc that lands on-grid.
+-spec circle(grid(), integer(), integer(), integer(), colour()) -> grid().
+circle(Grid, CX, CY, R, Colour) when R =< 0 ->
+    set(Grid, CX, CY, Colour);
+circle(Grid, CX, CY, R, Colour) ->
+    midpoint_circle(Grid, CX, CY, R, 0, 0, Colour).
+
+%% One midpoint-circle step: light the current point in all eight octants, stop
+%% once the walk has swept the first octant (`X < Y'), else advance `Y' (and,
+%% when the accumulated error turns positive, `X') by the standard integer
+%% decision update — no floating point, no trigonometry.
+-spec midpoint_circle(grid(), integer(), integer(), integer(), integer(), integer(), colour()) ->
+    grid().
+midpoint_circle(Grid, _CX, _CY, X, Y, _Err, _Colour) when X < Y ->
+    Grid;
+midpoint_circle(Grid, CX, CY, X, Y, Err, Colour) ->
+    Grid1 = plot_octants(Grid, CX, CY, X, Y, Colour),
+    {Y1, Err1} =
+        case Err =< 0 of
+            true ->
+                Yn = Y + 1,
+                {Yn, Err + 2 * Yn + 1};
+            false ->
+                {Y, Err}
+        end,
+    {X1, Err2} =
+        case Err1 > 0 of
+            true ->
+                Xn = X - 1,
+                {Xn, Err1 - 2 * Xn - 1};
+            false ->
+                {X, Err1}
+        end,
+    midpoint_circle(Grid1, CX, CY, X1, Y1, Err2, Colour).
+
+%% Light the eight reflections of `{X, Y}' about the centre `{CX, CY}' — the
+%% circle's eight-fold symmetry, so one octant's walk paints the whole ring.
+%% Coincident reflections (on the axes/diagonals) OR the same dot harmlessly.
+-spec plot_octants(grid(), integer(), integer(), integer(), integer(), colour()) -> grid().
+plot_octants(Grid, CX, CY, X, Y, Colour) ->
+    Points = [
+        {CX + X, CY + Y},
+        {CX - X, CY + Y},
+        {CX + X, CY - Y},
+        {CX - X, CY - Y},
+        {CX + Y, CY + X},
+        {CX - Y, CY + X},
+        {CX + Y, CY - X},
+        {CX - Y, CY - X}
+    ],
+    lists:foldl(fun({PX, PY}, G) -> set(G, PX, PY, Colour) end, Grid, Points).
 
 %%% -- emission --------------------------------------------------------
 
