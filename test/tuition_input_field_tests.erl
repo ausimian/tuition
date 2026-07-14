@@ -55,6 +55,19 @@ insert_at_the_caret_test() ->
     ?assertEqual(<<"abc">>, tuition_input_field:value(S)),
     ?assertEqual(2, tuition_input_field:cursor(S)).
 
+insert_of_a_combining_mark_merges_and_keeps_the_caret_put_test() ->
+    %% "ab", caret between a and b; insert U+0301 (combining acute). It merges with
+    %% 'a' into "á", so the value is a single "á" cluster then "b" and the caret
+    %% stays at index 1 — a following 'x' must land as "áxb", not "ábx".
+    Acute = 16#0301,
+    S0 = feed(typed(<<"ab">>), [{key, left, []}]),
+    ?assertEqual(1, tuition_input_field:cursor(S0)),
+    S1 = feed(S0, [char(Acute)]),
+    ?assertEqual(<<$a, Acute/utf8, $b>>, tuition_input_field:value(S1)),
+    ?assertEqual(1, tuition_input_field:cursor(S1)),
+    S2 = feed(S1, [char($x)]),
+    ?assertEqual(<<$a, Acute/utf8, $x, $b>>, tuition_input_field:value(S2)).
+
 backspace_deletes_before_the_caret_test() ->
     {S, Changed} = tuition_input_field:handle({key, backspace, []}, typed(<<"abc">>)),
     ?assertEqual(<<"ab">>, tuition_input_field:value(S)),

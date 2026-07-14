@@ -183,6 +183,16 @@ apply_event(_Other, State) ->
 %% Insert `Text' (sanitised of control bytes) at the caret, advancing the caret
 %% past it. Editing works on the list of grapheme clusters so a wide glyph or a
 %% base-plus-combining-mark cluster is inserted and stepped over as one unit.
+%%
+%% The caret is placed by re-clustering the joined prefix (the text up to and
+%% including the insertion), not by adding the inserted cluster count to `At': the
+%% inserted text can merge with the cluster before it — typing a combining mark
+%% after a base letter, `a' + U+0301 -> `á' — so the value gains fewer clusters than
+%% were inserted, and a naive count would strand the caret past the merge. Counting
+%% the joined prefix's clusters lands the caret exactly after the inserted text on
+%% whichever grapheme boundary actually results, so a batched next event still
+%% inserts in the right place (render's later clamp bounds the value length, but
+%% cannot repair a position that overshot).
 -spec insert(state(), unicode:chardata()) -> state().
 insert(#input_state{value = Value, cursor = Cursor} = State, Text) ->
     case sanitize(to_bin(Text)) of
@@ -191,9 +201,9 @@ insert(#input_state{value = Value, cursor = Cursor} = State, Text) ->
         Clean ->
             Clusters = clusters(Value),
             At = min(Cursor, length(Clusters)),
-            Inserted = clusters(Clean),
-            New = lists:sublist(Clusters, At) ++ Inserted ++ lists:nthtail(At, Clusters),
-            State#input_state{value = join(New), cursor = At + length(Inserted)}
+            {Prefix, Suffix} = lists:split(At, Clusters),
+            Head = join(Prefix ++ clusters(Clean)),
+            State#input_state{value = join([Head | Suffix]), cursor = count_clusters(Head)}
     end.
 
 %% Delete the cluster before the caret and step back over the gap; a no-op at the
