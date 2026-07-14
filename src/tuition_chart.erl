@@ -194,13 +194,15 @@
 -spec render(chart(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Chart, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;
-render(Chart, Area, Buf0) ->
-    Axes = maps:get(axes, Chart, false),
-    Bounds = chart_bounds(Chart, Area, Axes),
-    {PlotArea, Buf1} =
-        case Axes of
-            true -> draw_frame(Chart, Area, Bounds, Buf0);
-            false -> {Area, Buf0}
+render(Chart, #rect{w = W} = Area, Buf0) ->
+    {PlotArea, Bounds, Buf1} =
+        case maps:get(axes, Chart, false) of
+            true ->
+                Layout = layout(Chart, Area),
+                B = plot_window_bounds(Chart, Layout#layout.pw),
+                {Layout#layout.plot, B, draw_frame(Chart, Area, Layout, B, Buf0)};
+            false ->
+                {Area, plot_window_bounds(Chart, W), Buf0}
         end,
     Buf2 =
         case PlotArea of
@@ -209,20 +211,14 @@ render(Chart, Area, Buf0) ->
         end,
     draw_legend(Chart, PlotArea, Buf2).
 
-%% The y-bounds shared by the plot and the y-tick labels, resolved once from the
-%% datasets windowed to the *bounds width* — the plot width ignoring the y-tick
-%% gutter. Sizing the gutter from these bounds' labels (via {@link tick_gutter/2})
-%% therefore never feeds back into the bounds, so the labels always fit the gutter
-%% exactly and match the curve's scale. With ticks off (or no axes) the bounds
-%% width equals the plot width, so this is exactly what the plot resolved before.
--spec chart_bounds(chart(), #rect{}, boolean()) -> {number(), number()}.
-chart_bounds(Chart, #rect{w = W}, Axes) ->
-    BoundsCols =
-        case Axes of
-            true -> max(0, W - has_text(y_title, Chart) - 1);
-            false -> W
-        end,
-    WinCount = resolve_window(maps:get(window, Chart, auto), BoundsCols * 2),
+%% The y-bounds over the newest samples a plot of `PlotCols' cells can draw — the
+%% very window {@link plot/4} rasterizes (its sub-pixel width is `2 × PlotCols'), so
+%% the tick labels and the curve share one scale. Resolved from the *actual* plot
+%% width, after the tick gutter is subtracted, so a rolling `auto' window's bounds
+%% never include older samples the gutter pushed off-screen.
+-spec plot_window_bounds(chart(), non_neg_integer()) -> {number(), number()}.
+plot_window_bounds(Chart, PlotCols) ->
+    WinCount = resolve_window(maps:get(window, Chart, auto), PlotCols * 2),
     Series = [prepare(D, WinCount) || D <- maps:get(datasets, Chart, [])],
     resolve_bounds(maps:get(y_bounds, Chart, auto), Series).
 
@@ -377,14 +373,13 @@ window(Data, N) ->
 %%% -- axis frame + labelling ------------------------------------------
 
 %% Draw the axis frame — y-axis, x-axis, corner — plus any ticks, x-labels and
-%% titles, and return the inset plot rect the curves draw into. Every glyph is
+%% titles, into the pre-computed `Layout' with the plot's `Bounds'. Every glyph is
 %% placed `Area'-relative through {@link tuition_widget:put_line/6}, so a too-small
-%% area degrades to just the part of the frame that fits (the plot rect then coming
-%% back degenerate, drawn as nothing by {@link render/3}).
--spec draw_frame(chart(), #rect{}, {number(), number()}, tuition_render:buffer()) ->
-    {#rect{}, tuition_render:buffer()}.
-draw_frame(Chart, #rect{w = W} = Area, Bounds, Buf) ->
-    #layout{l = L, ph = PH, plot = Plot} = Layout = layout(Chart, Area, Bounds),
+%% area degrades to just the part of the frame that fits (the plot rect, taken from
+%% `Layout' by {@link render/3}, then coming back degenerate and drawn as nothing).
+-spec draw_frame(chart(), #rect{}, #layout{}, {number(), number()}, tuition_render:buffer()) ->
+    tuition_render:buffer().
+draw_frame(Chart, #rect{w = W} = Area, #layout{l = L, ph = PH} = Layout, Bounds, Buf) ->
     Style = maps:get(axis_style, Chart, #{}),
     %% y-axis up the axis column (`L'), every row above the corner.
     Buf1 = lists:foldl(
@@ -404,17 +399,16 @@ draw_frame(Chart, #rect{w = W} = Area, Bounds, Buf) ->
     Buf3 = tuition_widget:put_line(Buf2, Area, L, PH, <<?CORNER/utf8>>, Style),
     Buf4 = draw_ticks(Chart, Area, Layout, Bounds, Style, Buf3),
     Buf5 = draw_x_labels(Chart, Area, Layout, Style, Buf4),
-    Buf6 = draw_titles(Chart, Area, Layout, Style, Buf5),
-    {Plot, Buf6}.
+    draw_titles(Chart, Area, Layout, Style, Buf5).
 
 %% Compute the reserved-space layout: how many columns the y-title and y-tick
 %% labels claim left of the axis, how many rows the x-labels and x-title claim
 %% below it, and the plot rect that remains. With no labelling keys set this is a
 %% one-column, one-row inset — the bare frame, byte-for-byte as before.
--spec layout(chart(), #rect{}, {number(), number()}) -> #layout{}.
-layout(Chart, #rect{x = X, y = Y, w = W, h = H}, Bounds) ->
+-spec layout(chart(), #rect{}) -> #layout{}.
+layout(Chart, #rect{x = X, y = Y, w = W, h = H} = Area) ->
     YTitleW = has_text(y_title, Chart),
-    TickW = tick_gutter(Chart, Bounds),
+    TickW = tick_gutter(Chart, Area, YTitleW),
     L = YTitleW + TickW,
     XLabelH = has_list(x_labels, Chart),
     XTitleH = has_text(x_title, Chart),
@@ -451,16 +445,39 @@ has_list(Key, Chart) ->
 
 %%% -- y-ticks ---------------------------------------------------------
 
-%% The width of the y-tick gutter: the widest label the ticks will render, in
-%% columns, or 0 when ticks are off. Sized from the *same* {@link chart_bounds/3}
-%% the labels are drawn from, so the gutter fits every label exactly — no
-%% truncation, and no dependence on the gutter's own width (the bounds are resolved
-%% at the pre-gutter width, so this does not feed back on itself).
--spec tick_gutter(chart(), {number(), number()}) -> non_neg_integer().
-tick_gutter(Chart, Bounds) ->
+%% The width of the y-tick gutter, in columns, or 0 when ticks are off. The gutter
+%% narrows the plot, which narrows the window, which sets the auto-bounds, which set
+%% the labels, which set the gutter — a genuine cycle. We reach its fixed point by
+%% growing the gutter monotonically ({@link converge_gutter/6}): a non-decreasing
+%% integer bounded by the width stabilises in a couple of steps, and at the fixed
+%% point the labels fit the gutter (so nothing truncates) while the bounds are those
+%% of the window actually plotted (so the labels describe the visible curve, not
+%% samples the gutter pushed off-screen). With explicit bounds — or a window not
+%% width-limited — the label width is constant, so it settles in one step.
+-spec tick_gutter(chart(), #rect{}, 0 | 1) -> non_neg_integer().
+tick_gutter(Chart, Area, YTitleW) ->
     case maps:get(y_ticks, Chart, none) of
         none -> 0;
-        Spec -> widest([fmt_num(V) || V <- tick_values(Spec, Bounds)])
+        Spec -> converge_gutter(Chart, Area, Spec, YTitleW, 0, 8)
+    end.
+
+%% One step towards the fixed point: size the labels from the bounds of the window
+%% the *current* gutter guess leaves, and grow the gutter to fit them. Growing only
+%% (never shrinking) keeps the sequence non-decreasing so it converges; `Fuel'
+%% bounds the recursion as a backstop, though a stable width is reached well before
+%% it runs out.
+-spec converge_gutter(
+    chart(), #rect{}, auto | [number()], 0 | 1, non_neg_integer(), non_neg_integer()
+) -> non_neg_integer().
+converge_gutter(_Chart, _Area, _Spec, _YTitleW, G, 0) ->
+    G;
+converge_gutter(Chart, #rect{w = W} = Area, Spec, YTitleW, G, Fuel) ->
+    PlotCols = max(0, W - YTitleW - G - 1),
+    Bounds = plot_window_bounds(Chart, PlotCols),
+    Next = max(G, widest([fmt_num(V) || V <- tick_values(Spec, Bounds)])),
+    case Next =:= G of
+        true -> G;
+        false -> converge_gutter(Chart, Area, Spec, YTitleW, Next, Fuel - 1)
     end.
 
 %% The values the y-ticks label: `auto' derives max/mid/min from the bounds, an

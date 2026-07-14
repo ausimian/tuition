@@ -288,6 +288,21 @@ y_ticks_auto_gutter_fits_a_fractional_windowed_midpoint_test() ->
     ?assertEqual($., ch(B, 3, 2)),
     ?assertEqual($5, ch(B, 4, 2)).
 
+y_ticks_auto_bounds_track_the_visible_window_test() ->
+    %% With window => auto and a rising series, the tick gutter shrinks the plot so
+    %% older (smaller) samples scroll off. The auto bounds — and thus the bottom
+    %% tick — must reflect the *visible* window's minimum, not a hidden older sample
+    %% (here the visible min is 95, whereas the full history starts at 0).
+    B = render(#{datasets => [#{data => lists:seq(0, 100)}], axes => true, y_ticks => auto}, 8, 5),
+    %% gutter fits "97.5" -> width 4 -> axis in column 4.
+    ?assertEqual(?V_AXIS, ch(B, 4, 0)),
+    %% top tick the visible max "100"...
+    ?assertEqual($1, ch(B, 1, 0)),
+    ?assertEqual($0, ch(B, 3, 0)),
+    %% ...bottom tick the visible min "95", not the hidden 0.
+    ?assertEqual($9, ch(B, 2, 3)),
+    ?assertEqual($5, ch(B, 3, 3)).
+
 y_ticks_need_axes_test() ->
     %% Ticks are axis chrome — without the frame they reserve no gutter and the
     %% plot uses the whole area (a lone max point at the top-left cell).
