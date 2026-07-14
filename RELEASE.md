@@ -13,6 +13,18 @@
   base glyph attributes. This is ratatui's `Canvas`, the general surface `Chart`
   specialises. The braille kernel gains `rect/6` and `circle/5` rasterizers
   (alongside `line/6`) to support it.
+- **`tuition_chart` legend and labelled axes** — the chart can now label itself
+  instead of leaving it all to the caller. Datasets take an optional `name`, and
+  `legend => #{position, style}` floats a small boxed colour-swatch key in a plot
+  corner (resetting the cells beneath it so the curves do not show through). With
+  `axes => true`, four opt-in keys label the frame, each reserving its own gutter
+  or row so they compose without overlap: `y_ticks` (`auto` — max/mid/min — or an
+  explicit value list) draws numeric labels up the y-axis; `x_labels` spreads
+  labels along the x-axis (first flush-left, last flush-right); and `y_title` /
+  `x_title` add axis titles (the y-title written vertically in a reserved
+  left column). Ticks share the curve's live scale, so a label sits level with the
+  value it denotes. All labelling is opt-in — a chart with none of these keys is
+  drawn exactly as before.
 - **`tuition_barchart`** — a stateless widget for labeled categorical bars,
   complementing the compact, unlabeled `tuition_sparkline` with a readable chart
   of a handful of named quantities (per-scheduler utilisation, a memory-by-type
