@@ -180,6 +180,22 @@ area_fills_down_across_cell_rows_test() ->
     ?assertEqual(16#2847, ch(B, 0, 0)),
     ?assertEqual(16#2847, ch(B, 0, 1)).
 
+area_flat_series_fills_to_the_floor_test() ->
+    %% A flat series (a zero-height auto range) drawn as `area' still fills each
+    %% column from the vertical middle down to the baseline -> dots 3/6/7/8
+    %% (0x04|0x20|0x40|0x80 = 0xE4), not a zero-height line at the middle row.
+    B = render(#{datasets => [#{data => [5, 5], marker => area}]}, 1, 1),
+    ?assertEqual(16#28E4, ch(B, 0, 0)).
+
+area_degenerate_explicit_bounds_still_fill_test() ->
+    %% The same mid-to-floor fill under explicit degenerate bounds `{5, 5}' (a
+    %% pinned flat area chart) and under inverted bounds `{10, 0}' — the range has no
+    %% gradient, but the column still fills rather than collapsing to a middle dot.
+    Flat = render(#{datasets => [#{data => [5, 5], marker => area}], y_bounds => {5, 5}}, 1, 1),
+    ?assertEqual(16#28E4, ch(Flat, 0, 0)),
+    Inv = render(#{datasets => [#{data => [5, 5], marker => area}], y_bounds => {10, 0}}, 1, 1),
+    ?assertEqual(16#28E4, ch(Inv, 0, 0)).
+
 %%% -- colour ----------------------------------------------------------
 
 series_colour_is_applied_test() ->

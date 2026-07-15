@@ -232,27 +232,47 @@ plot_window_bounds(Chart, PlotCols) ->
 %% Lower every dataset to {@link tuition_canvas} shapes over the plot area and hand
 %% them to the canvas — the single braille plotting path. The x-axis spans the
 %% sub-pixel column range `{0, PW - 1}', so a sample's column index is its x value;
-%% the y-axis spans the chart's resolved `Bounds', so the canvas does the
+%% the y-axis ({@link y_axis/1}) gives the canvas bounds, the value each sample maps
+%% to, and the baseline an `area' column fills down to, so the canvas does the
 %% value-to-sub-pixel mapping the chart once did by hand. Shapes are listed in
 %% dataset order, so the canvas folds them onto its one shared grid in that order
 %% and the last dataset wins a shared cell's colour — the one-colour-per-cell rule,
 %% carried over for free.
 -spec plot(chart(), #rect{}, {number(), number()}, tuition_render:buffer()) ->
     tuition_render:buffer().
-plot(Chart, Area, {Ymin, _Ymax} = Bounds, Buf) ->
+plot(Chart, Area, Bounds, Buf) ->
     {PW, _PH} = tuition_braille:dims(tuition_braille:new(Area)),
     WinCount = resolve_window(maps:get(window, Chart, auto), PW),
     XAlign = maps:get(x_align, Chart, left),
     Series = [prepare(D, WinCount) || D <- maps:get(datasets, Chart, [])],
+    {YBounds, Baseline, MapY} = y_axis(Bounds),
     Shapes = lists:flatmap(
         fun({Colour, Marker, Window}) ->
             Col0 = col_offset(XAlign, PW, length(Window)),
-            marker_shapes(Marker, series_points(Window, Col0), Ymin, Colour)
+            marker_shapes(Marker, series_points(Window, Col0, MapY), Baseline, Colour)
         end,
         Series
     ),
-    Canvas = #{x_bounds => {0, PW - 1}, y_bounds => Bounds, shapes => Shapes},
+    Canvas = #{x_bounds => {0, PW - 1}, y_bounds => YBounds, shapes => Shapes},
     tuition_canvas:render(Canvas, Area, Buf).
+
+%% The y-axis the canvas plots against: `{Bounds, Baseline, MapY}' — the canvas
+%% `y_bounds', the value an `area' column fills down to, and the value each sample
+%% maps through. Normally the chart's own resolved bounds, each value passed through
+%% unchanged and the baseline at `Ymin' (the plot floor). A degenerate or inverted
+%% range (`Ymax =< Ymin') is the exception: the canvas would collapse *every* value
+%% — the baseline included — to the middle fallback row, so an `area' column would
+%% span nothing (the regression this guards against). Substitute the unit range, map
+%% every value to its midpoint `0.5', and drop the baseline to `0.0' (the floor):
+%% samples still land on the middle exactly as the collapse placed them (so the
+%% line/scatter markers draw the same flat mid-line), while an `area' column fills
+%% from the middle down to the floor again — the documented column fill.
+-spec y_axis({number(), number()}) ->
+    {{number(), number()}, number(), fun((number()) -> number())}.
+y_axis({Ymin, Ymax} = Bounds) when Ymax > Ymin ->
+    {Bounds, Ymin, fun(V) -> V end};
+y_axis(_Degenerate) ->
+    {{0.0, 1.0}, 0.0, fun(_V) -> 0.5 end}.
 
 %% A dataset reduced to what plotting needs: its colour, its marker, and the
 %% newest `WinCount' samples of its series (the tail the window shows).
@@ -282,33 +302,35 @@ col_offset(_Left, _PW, _L) -> 0.
 
 %% A window as value-space points: sample `I' (0-based, left to right) at x value
 %% `Col0 + I' — its sub-pixel column, since the canvas x-axis spans `{0, PW - 1}' —
-%% paired with its raw y value. The canvas maps each `{X, V}' to a sub-pixel; the
-%% list stays in window order, so consecutive points are adjacent columns a line
-%% can connect.
--spec series_points([number()], integer()) -> [{integer(), number()}].
-series_points(Window, Col0) ->
-    {Points, _} = lists:mapfoldl(fun(V, Col) -> {{Col, V}, Col + 1} end, Col0, Window),
+%% paired with its y value through `MapY' (identity normally; the midpoint for a
+%% degenerate range, see {@link y_axis/1}). The canvas maps each `{X, Y}' to a
+%% sub-pixel; the list stays in window order, so consecutive points are adjacent
+%% columns a line can connect.
+-spec series_points([number()], integer(), fun((number()) -> number())) ->
+    [{integer(), number()}].
+series_points(Window, Col0, MapY) ->
+    {Points, _} = lists:mapfoldl(fun(V, Col) -> {{Col, MapY(V)}, Col + 1} end, Col0, Window),
     Points.
 
-%% Lower one series' value points to canvas shapes for its marker: `scatter' to a
-%% single `points' shape (a dot per sample); `line' to a `line' segment between
-%% each consecutive pair (a lone sample, with no neighbour to connect to, lowers to
-%% a one-point `points' shape); `area' to one vertical `line' per sample, from the
-%% sample value down to the baseline value `Ymin' (which the canvas maps to the
-%% bottom sub-pixel row) — a one-column-wide vertical line reproducing the old
-%% `fill_column' fill dot for dot. An empty series lowers to no shapes.
+%% Lower one series' points to canvas shapes for its marker: `scatter' to a single
+%% `points' shape (a dot per sample); `line' to a `line' segment between each
+%% consecutive pair (a lone sample, with no neighbour to connect to, lowers to a
+%% one-point `points' shape); `area' to one vertical `line' per sample, from the
+%% sample's y down to `Baseline' (which the canvas maps to the bottom sub-pixel row)
+%% — a one-column-wide vertical line reproducing the old `fill_column' fill dot for
+%% dot. An empty series lowers to no shapes.
 -spec marker_shapes(
     line | scatter | area, [{integer(), number()}], number(), tuition_braille:colour()
 ) -> [tuition_canvas:shape()].
-marker_shapes(_Marker, [], _Ymin, _Colour) ->
+marker_shapes(_Marker, [], _Baseline, _Colour) ->
     [];
-marker_shapes(scatter, Points, _Ymin, Colour) ->
+marker_shapes(scatter, Points, _Baseline, Colour) ->
     [{points, Points, Colour}];
-marker_shapes(area, Points, Ymin, Colour) ->
-    [{line, X, V, X, Ymin, Colour} || {X, V} <- Points];
-marker_shapes(line, [Point], _Ymin, Colour) ->
+marker_shapes(area, Points, Baseline, Colour) ->
+    [{line, X, Y, X, Baseline, Colour} || {X, Y} <- Points];
+marker_shapes(line, [Point], _Baseline, Colour) ->
     [{points, [Point], Colour}];
-marker_shapes(line, Points, _Ymin, Colour) ->
+marker_shapes(line, Points, _Baseline, Colour) ->
     line_segments(Points, Colour).
 
 %% One `line' shape between each consecutive pair of points — the connected curve.
