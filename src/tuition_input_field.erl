@@ -1,0 +1,619 @@
+%%%-------------------------------------------------------------------
+%%% @doc Text input field — a single-line, editable value with a caret and
+%%% horizontal scroll (stateful).
+%%%
+%%% Where {@link tuition_input} / {@link tuition_input_driver} turn a byte stream
+%%% into structured key events, this is the on-screen counterpart: a rendered,
+%%% editable field that shows typed text, a caret, and a scrolling view of a value
+%%% longer than the field is wide. It is the affordance a filter/search box or a
+%%% command line is built from (PRD §9). It is ratatui-land's `tui-input'.
+%%%
+%%% == Stateful, by necessity ==
+%%% The value, the caret position and the scroll offset live in an `#input_state{}'
+%%% (see `include/tuition_widget.hrl') held by the *caller*, not in this module —
+%%% the renderer is immediate-mode and discards every frame, so state kept inside
+%%% the widget would not survive (see {@link tuition_widget}). Editing is a pure
+%%% state transition the caller applies to each decoded event, and {@link render/4}
+%%% takes the state and returns it with the scroll offset reconciled to keep the
+%%% caret in view:
+%%% ```
+%%%   {State1, _Changed} = tuition_input_field:handle(Event, State0),
+%%%   {Buf1, State2}     = tuition_input_field:render(Cfg, Area, Buf0, State1).
+%%% '''
+%%% This is ratatui's `StatefulWidget' split, made explicit because Erlang has no
+%%% `&mut'.
+%%%
+%%% == Editing ({@link handle/2}) ==
+%%% {@link handle/2} folds one decoded {@link tuition_input:event()} into the state
+%%% and reports whether the *value* changed (so a caller can re-run its filter only
+%%% when it must — a bare caret move returns `false'):
+%%% <ul>
+%%%   <li>a printable `char' (no `ctrl'/`alt'/`meta') is inserted at the caret;</li>
+%%%   <li>`backspace' deletes the cluster before the caret, `delete' the one
+%%%       after;</li>
+%%%   <li>`left'/`right' move the caret one grapheme cluster; with `ctrl' or `alt'
+%%%       held they move by a word;</li>
+%%%   <li>`home'/`end' jump to the start/end;</li>
+%%%   <li>a `{paste, _}' inserts its text at the caret, with control bytes (a
+%%%       newline included, since the field is single-line) stripped;</li>
+%%%   <li>anything else (`enter', `tab', arrows the field does not use, a `ctrl'
+%%%       chord, a mouse report) is left for the caller to act on and returns the
+%%%       state unchanged.</li>
+%%% </ul>
+%%% Caret movement and word boundaries are grapheme-cluster aware — a wide glyph or
+%%% a base-plus-combining-mark cluster is one step — measured with the same {@link
+%%% tuition_widget:display_width/1} the renderer clips by, so the caret column the
+%%% field scrolls to and the column the glyph actually lands on never disagree. A
+%%% word is a maximal run of non-space clusters; a word move skips any spaces then
+%%% the run beside them.
+%%%
+%%% == Horizontal scroll ==
+%%% When the value is wider than the field, {@link render/4} slides `offset' (the
+%%% index of the leftmost visible cluster) just far enough to keep the caret in
+%%% view: leftward when the caret sits left of the window, rightward when it runs
+%%% off the right — reserving one column for the caret so a caret at the very end
+%%% of a full field is still shown — and it pulls back left to avoid a needless
+%%% blank tail after the value shrinks. Scrolling is by whole clusters, so a wide
+%%% glyph is never split across the left edge. The reconciled offset is returned
+%%% and kept for the next frame, the horizontal analogue of {@link tuition_list}'s
+%%% vertical `offset'.
+%%%
+%%% == The caret is a styled cell ==
+%%% The application owns (and hides) the hardware cursor, so the field draws its own
+%%% caret as a styled cell: `cursor_style' is overlaid on whatever cell already sits
+%%% at the caret column — the value glyph, the placeholder glyph, or the blank an
+%%% unstyled field left transparent — preserving that cell's own style (a parent
+%%% block's background included) rather than punching a default-styled hole through
+%%% it. The default `cursor_style' is `underline', the one attribute always visible
+%%% over a blank (a `reverse' block cursor awaits the richer style model of #8). An
+%%% empty `cursor_style' draws no visible caret, which is how a caller marks the
+%%% field unfocused.
+%%%
+%%% == Config ==
+%%% A `#{}' map, every key optional:
+%%% <ul>
+%%%   <li>`placeholder'       — chardata shown when the value is empty (default
+%%%       none).</li>
+%%%   <li>`style'             — base style for the field, filling its full width
+%%%       (default: unstyled, so a parent background shows through).</li>
+%%%   <li>`cursor_style'      — style overlaid on the caret cell (default
+%%%       `#{underline => true}'; `#{}' to hide the caret).</li>
+%%%   <li>`placeholder_style' — style for the placeholder text (default
+%%%       `#{fg => 8}', a dim grey).</li>
+%%%   <li>`mask'              — a single codepoint to display in place of every
+%%%       value cluster, for a password-style field (default: show the value).</li>
+%%% </ul>
+%%% The field draws on the top row of `Area' and confines itself to it; give it a
+%%% one-row rect via {@link tuition_layout}.
+%%%
+%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
+%%% sibling render/layout/width/widget modules. No third-party code.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(tuition_input_field).
+
+-include("tuition_layout.hrl").
+-include("tuition_term.hrl").
+-include("tuition_widget.hrl").
+
+-export([new/0, render/4, handle/2, value/1, set_value/2, cursor/1]).
+
+-type input_cfg() :: #{
+    placeholder => unicode:chardata(),
+    style => tuition_render:style(),
+    cursor_style => tuition_render:style(),
+    placeholder_style => tuition_render:style(),
+    mask => char()
+}.
+-type state() :: #input_state{}.
+
+-export_type([input_cfg/0, state/0]).
+
+%% A caret drawn over a blank needs an attribute that shows without a glyph;
+%% underline is the one always available today (bold on a space is invisible, and
+%% there is no `reverse' yet — see #8). A dim grey placeholder is the convention
+%% for "no value here". Both are overridable via config.
+-define(DEFAULT_CURSOR_STYLE, #{underline => true}).
+-define(DEFAULT_PLACEHOLDER_STYLE, #{fg => 8}).
+
+%%% -- state -----------------------------------------------------------
+
+%% @doc A fresh, empty field: no text, caret at the start, unscrolled. A caller
+%% that does not want to include `tuition_widget.hrl' can start here and drive the
+%% field through the API ({@link handle/2}, {@link set_value/2}, {@link value/1},
+%% {@link cursor/1}).
+-spec new() -> state().
+new() -> #input_state{}.
+
+%% @doc The field's current value, as a UTF-8 binary.
+-spec value(state()) -> binary().
+value(#input_state{value = Value}) -> Value.
+
+%% @doc The caret position, as a 0-based grapheme-cluster index into the value
+%% (`0' before the first cluster, the cluster count after the last).
+-spec cursor(state()) -> non_neg_integer().
+cursor(#input_state{cursor = Cursor}) -> Cursor.
+
+%% @doc Replace the value wholesale and place the caret at its end. Control bytes
+%% (newlines included — the field is single-line) are stripped, so a value pasted
+%% in programmatically renders as one clean line. The scroll offset is reset and
+%% reconciled at the next {@link render/4}.
+-spec set_value(state(), unicode:chardata()) -> state().
+set_value(State, Chardata) ->
+    Value = sanitize(to_bin(Chardata)),
+    State#input_state{value = Value, cursor = count_clusters(Value), offset = 0}.
+
+%%% -- editing ---------------------------------------------------------
+
+%% @doc Fold one decoded {@link tuition_input:event()} into the field, returning
+%% the updated state and whether the *value* changed. A bare caret move (`left',
+%% `home', ...) returns `false' though the state's caret moved, so a caller can
+%% gate an expensive re-filter on real edits; an event the field ignores returns
+%% the state unchanged and `false'. See the module doc for the key bindings.
+-spec handle(tuition_input:event(), state()) -> {state(), Changed :: boolean()}.
+handle(Event, #input_state{value = Before} = State0) ->
+    State1 = apply_event(Event, State0),
+    {State1, State1#input_state.value =/= Before}.
+
+-spec apply_event(tuition_input:event(), state()) -> state().
+apply_event({key, {char, CP}, Mods}, State) ->
+    case is_text_input(Mods) of
+        true -> insert(State, <<CP/utf8>>);
+        false -> State
+    end;
+apply_event({key, backspace, _Mods}, State) ->
+    backspace(State);
+apply_event({key, delete, _Mods}, State) ->
+    delete(State);
+apply_event({key, left, Mods}, State) ->
+    move_left(State, word_mod(Mods));
+apply_event({key, right, Mods}, State) ->
+    move_right(State, word_mod(Mods));
+apply_event({key, home, _Mods}, State) ->
+    State#input_state{cursor = 0};
+apply_event({key, 'end', _Mods}, #input_state{value = Value} = State) ->
+    State#input_state{cursor = count_clusters(Value)};
+apply_event({paste, Bin}, State) ->
+    insert(State, Bin);
+apply_event(_Other, State) ->
+    %% enter, tab, arrows the field does not use, ctrl chords, mouse — the
+    %% caller's to act on. Leave the field untouched.
+    State.
+
+%% Insert `Text' (sanitised of control bytes) at the caret, advancing the caret
+%% past it. Editing works on the list of grapheme clusters so a wide glyph or a
+%% base-plus-combining-mark cluster is inserted and stepped over as one unit.
+%%
+%% The caret is placed by re-clustering the joined prefix (the text up to and
+%% including the insertion), not by adding the inserted cluster count to `At': the
+%% inserted text can merge with the cluster before it — typing a combining mark
+%% after a base letter, `a' + U+0301 -> `á' — so the value gains fewer clusters than
+%% were inserted, and a naive count would strand the caret past the merge. Counting
+%% the joined prefix's clusters lands the caret exactly after the inserted text on
+%% whichever grapheme boundary actually results, so a batched next event still
+%% inserts in the right place (render's later clamp bounds the value length, but
+%% cannot repair a position that overshot).
+-spec insert(state(), unicode:chardata()) -> state().
+insert(#input_state{value = Value, cursor = Cursor} = State, Text) ->
+    case sanitize(to_bin(Text)) of
+        <<>> ->
+            State;
+        Clean ->
+            Clusters = clusters(Value),
+            At = min(Cursor, length(Clusters)),
+            {Prefix, Suffix} = lists:split(At, Clusters),
+            Head = join(Prefix ++ clusters(Clean)),
+            State#input_state{value = join([Head | Suffix]), cursor = count_clusters(Head)}
+    end.
+
+%% Delete the cluster before the caret and step back over the gap; a no-op at the
+%% start of the value.
+-spec backspace(state()) -> state().
+backspace(#input_state{value = Value, cursor = Cursor} = State) ->
+    Clusters = clusters(Value),
+    case min(Cursor, length(Clusters)) of
+        0 ->
+            State;
+        At ->
+            New = lists:sublist(Clusters, At - 1) ++ lists:nthtail(At, Clusters),
+            State#input_state{value = join(New), cursor = At - 1}
+    end.
+
+%% Delete the cluster after the caret, leaving the caret put; a no-op at the end of
+%% the value.
+-spec delete(state()) -> state().
+delete(#input_state{value = Value, cursor = Cursor} = State) ->
+    Clusters = clusters(Value),
+    At = min(Cursor, length(Clusters)),
+    case At < length(Clusters) of
+        false ->
+            State;
+        true ->
+            New = lists:sublist(Clusters, At) ++ lists:nthtail(At + 1, Clusters),
+            State#input_state{value = join(New), cursor = At}
+    end.
+
+%% Move the caret left one cluster, or (Word) to the start of the word to its left.
+-spec move_left(state(), boolean()) -> state().
+move_left(#input_state{value = Value, cursor = Cursor} = State, Word) ->
+    Clusters = clusters(Value),
+    At = min(Cursor, length(Clusters)),
+    New =
+        case Word of
+            true -> word_left(Clusters, At);
+            false -> max(0, At - 1)
+        end,
+    State#input_state{cursor = New}.
+
+%% Move the caret right one cluster, or (Word) past the word to its right.
+-spec move_right(state(), boolean()) -> state().
+move_right(#input_state{value = Value, cursor = Cursor} = State, Word) ->
+    Clusters = clusters(Value),
+    N = length(Clusters),
+    At = min(Cursor, N),
+    New =
+        case Word of
+            true -> word_right(Clusters, At);
+            false -> min(N, At + 1)
+        end,
+    State#input_state{cursor = New}.
+
+%% Skip any spaces to the left of `At', then the run of non-spaces beside them —
+%% landing at the start of the word the caret was in or just past. Scans the slice
+%% left of the caret once (nearest cluster first) rather than indexing the list per
+%% step, so a word move over an N-cluster word is O(N), not O(N²).
+-spec word_left([binary()], non_neg_integer()) -> non_neg_integer().
+word_left(Clusters, At) ->
+    Left = lists:reverse(lists:sublist(Clusters, At)),
+    At - skip_word(Left).
+
+%% Skip any spaces to the right of `At', then the run of non-spaces beside them —
+%% landing just past the next word. Scans the slice at/after the caret once, so the
+%% move is O(N) rather than O(N²).
+-spec word_right([binary()], non_neg_integer()) -> non_neg_integer().
+word_right(Clusters, At) ->
+    At + skip_word(lists:nthtail(At, Clusters)).
+
+%% How many clusters a word move crosses over `Clusters' (ordered nearest-to-caret
+%% first): the leading run of spaces, then the run of non-spaces beside it.
+-spec skip_word([binary()]) -> non_neg_integer().
+skip_word(Clusters) ->
+    {Spaces, Rest} = lists:splitwith(fun is_space/1, Clusters),
+    {Word, _Tail} = lists:splitwith(fun(Cluster) -> not is_space(Cluster) end, Rest),
+    length(Spaces) + length(Word).
+
+%% Whether a cluster is a word separator. A word boundary is an ASCII space: it is
+%% the separator a filter/command box types, and control bytes (tabs included) are
+%% stripped before they reach the value, so no other whitespace occurs here.
+-spec is_space(binary()) -> boolean().
+is_space(<<$\s, _/binary>>) -> true;
+is_space(_Cluster) -> false.
+
+%% Whether a `char' event is plain typed text rather than a shortcut: no `ctrl',
+%% `alt' or `meta' held (a bare `shift', already folded into the codepoint, is
+%% fine).
+-spec is_text_input([tuition_input:mod()]) -> boolean().
+is_text_input(Mods) ->
+    not lists:any(fun(M) -> lists:member(M, [ctrl, alt, meta]) end, Mods).
+
+%% Whether a modifier set asks for a word-wise caret move (`ctrl' or `alt' held on
+%% an arrow key), the two conventional word-move chords.
+-spec word_mod([tuition_input:mod()]) -> boolean().
+word_mod(Mods) ->
+    lists:member(ctrl, Mods) orelse lists:member(alt, Mods).
+
+%%% -- render ----------------------------------------------------------
+
+%% @doc Draw the field into the top row of `Area' — the visible slice of the value
+%% (or the placeholder when empty) with the caret over it — and return the buffer
+%% together with the reconciled state (caret clamped into range, scroll offset slid
+%% to keep the caret in view). A degenerate area draws nothing but still reconciles
+%% the state, so a resize to nothing and back leaves a valid caret/offset behind.
+-spec render(input_cfg(), #rect{}, tuition_render:buffer(), state()) ->
+    {tuition_render:buffer(), state()}.
+render(Cfg, #rect{w = W, h = H} = Area, Buf, State0) ->
+    Display = display_clusters(Cfg, State0),
+    State1 = reconcile(State0, Display, W),
+    Buf1 =
+        case W =< 0 orelse H =< 0 of
+            true -> Buf;
+            false -> draw(Cfg, Area, Buf, State1, Display)
+        end,
+    {Buf1, State1}.
+
+%% The value as a list of `{Glyph, Width}' pairs: the glyph to draw for each
+%% cluster (the cluster itself, or the `mask' codepoint for a password field) and
+%% its display width, measured the way {@link tuition_widget:display_width/1} — and
+%% so the renderer — will account for it.
+-spec display_clusters(input_cfg(), state()) -> [{binary(), non_neg_integer()}].
+display_clusters(Cfg, #input_state{value = Value}) ->
+    Mask = maps:get(mask, Cfg, none),
+    [display_one(GC, Mask) || GC <- clusters(Value)].
+
+-spec display_one(binary(), char() | none) -> {binary(), non_neg_integer()}.
+display_one(_GC, Mask) when is_integer(Mask) ->
+    Glyph = <<Mask/utf8>>,
+    {Glyph, tuition_widget:display_width(Glyph)};
+display_one(GC, _Mask) ->
+    {GC, tuition_widget:display_width(GC)}.
+
+%% @doc Reconcile an `#input_state{}' against the current value and field width:
+%% clamp the caret into `[0, N]' (the cluster count) and slide the scroll offset so
+%% the caret falls within the visible window. Pure: the returned state is what
+%% survives to the next frame.
+-spec reconcile(state(), [{binary(), non_neg_integer()}], integer()) -> state().
+reconcile(#input_state{value = Value, cursor = Cursor0, offset = Offset0}, Display, W) ->
+    N = length(Display),
+    Cursor = clamp(Cursor0, 0, N),
+    Offset = adjust_offset(Offset0, Cursor, Display, W),
+    #input_state{value = Value, cursor = Cursor, offset = Offset}.
+
+%% Slide the scroll offset (a cluster index) to keep the caret in view within a
+%% `W'-column field. The offset can never sit right of the caret; it is then pushed
+%% right until the columns before the caret leave room for the glyph under the caret
+%% (its own display width — two columns for a wide glyph the caret sits on, so it is
+%% not clipped at the right edge — or one for a caret past the last cluster), and
+%% finally pulled back left so the value's tail does not leave a needless blank gap
+%% after an edit shortened it.
+-spec adjust_offset(
+    non_neg_integer(), non_neg_integer(), [{binary(), non_neg_integer()}], integer()
+) ->
+    non_neg_integer().
+adjust_offset(_Offset, _Cursor, _Display, W) when W =< 0 ->
+    0;
+adjust_offset(Offset0, Cursor, Display, W) ->
+    Pre = prefix_sums([Width || {_Glyph, Width} <- Display]),
+    N = tuple_size(Pre) - 1,
+    CaretW = caret_width(Display, Cursor),
+    Capped = min(max(Offset0, 0), Cursor),
+    Pushed = push_right(Capped, Cursor, Pre, W, CaretW),
+    pull_left(Pushed, Cursor, N, Pre, W, CaretW).
+
+%% The columns the caret needs at its position: the display width of the glyph it
+%% sits on (a wide cluster is two, so scrolling reserves room for the whole glyph
+%% rather than clipping it), or one for a caret past the last cluster. Floored at
+%% one so a zero-width cluster under the caret still reserves a column to show it.
+-spec caret_width([{binary(), non_neg_integer()}], non_neg_integer()) -> pos_integer().
+caret_width(Display, Cursor) ->
+    case Cursor < length(Display) of
+        true ->
+            {_Glyph, Width} = lists:nth(Cursor + 1, Display),
+            max(1, Width);
+        false ->
+            1
+    end.
+
+%% Push the offset right until the columns before the caret leave room for the
+%% caret's glyph (`CaretW') in `W'. Stops at the caret at the latest, where that
+%% width is zero. Linear in the clusters it steps over: each step is one O(1) {@link
+%% span/3} lookup, so a long value with the caret at the end (a large paste)
+%% reconciles in O(n), not O(n²).
+-spec push_right(non_neg_integer(), non_neg_integer(), tuple(), pos_integer(), pos_integer()) ->
+    non_neg_integer().
+push_right(Offset, Cursor, Pre, W, CaretW) ->
+    case Offset < Cursor andalso span(Pre, Offset, Cursor) > W - CaretW of
+        true -> push_right(Offset + 1, Cursor, Pre, W, CaretW);
+        false -> Offset
+    end.
+
+%% Pull the offset back left while doing so keeps the view valid — so a value that
+%% shrank does not leave leading text hidden behind a blank right margin — subject
+%% to two invariants that must both hold for the candidate offset one cluster
+%% earlier:
+%%   * the visible tail (the value from that cluster to the end, plus the caret's
+%%     own column when it sits at the very end) still fits in `W'; and
+%%   * the caret still fits with room for its glyph (`CaretW') — pulling left widens
+%%     the columns before the caret, and a zero-width cluster *after* the caret can
+%%     make the total tail fit while the caret column would not, so this is checked
+%%     in its own right rather than folded into the tail width (else the caret is
+%%     pushed off the right edge and {@link draw_caret/7} draws nothing).
+-spec pull_left(
+    non_neg_integer(), non_neg_integer(), non_neg_integer(), tuple(), pos_integer(), pos_integer()
+) -> non_neg_integer().
+pull_left(0, _Cursor, _N, _Pre, _W, _CaretW) ->
+    0;
+pull_left(Offset, Cursor, N, Pre, W, CaretW) ->
+    CaretExtra = caret_extra(Cursor, N),
+    TailFits = span(Pre, Offset - 1, N) + CaretExtra =< W,
+    CaretFits = span(Pre, Offset - 1, Cursor) =< W - CaretW,
+    case TailFits andalso CaretFits of
+        true -> pull_left(Offset - 1, Cursor, N, Pre, W, CaretW);
+        false -> Offset
+    end.
+
+%%% -- drawing ---------------------------------------------------------
+
+%% Fill the field's row with the base style, draw the value's visible slice (or the
+%% placeholder when empty), then lay the caret over the glyph beneath it.
+-spec draw(input_cfg(), #rect{}, tuition_render:buffer(), state(), [{binary(), non_neg_integer()}]) ->
+    tuition_render:buffer().
+draw(Cfg, #rect{w = W} = Area, Buf, #input_state{cursor = Cursor, offset = Offset}, Display) ->
+    Base = maps:get(style, Cfg, #{}),
+    Buf1 = tuition_widget:fill(Buf, top_row(Area), Base),
+    Buf2 =
+        case Display of
+            [] -> draw_placeholder(Cfg, Area, Buf1, Base);
+            _ -> draw_value(Area, Buf1, Base, Display, Offset)
+        end,
+    draw_caret(Cfg, Area, Buf2, Display, Offset, Cursor, W).
+
+%% Draw the visible clusters, from the offset onward, as one run at column 0;
+%% {@link tuition_widget:put_line/6} truncates it to the field width, dropping a
+%% wide glyph with only one column left at the right edge exactly as the renderer
+%% would.
+-spec draw_value(
+    #rect{},
+    tuition_render:buffer(),
+    tuition_render:style(),
+    [{binary(), non_neg_integer()}],
+    non_neg_integer()
+) ->
+    tuition_render:buffer().
+draw_value(Area, Buf, Base, Display, Offset) ->
+    Glyphs = [Glyph || {Glyph, _Width} <- lists:nthtail(Offset, Display)],
+    tuition_widget:put_line(Buf, Area, 0, 0, Glyphs, Base).
+
+%% Draw the placeholder (shown only while the value is empty) at column 0 in the
+%% placeholder style, over the base style so a configured field background shows
+%% through; nothing when no placeholder is configured.
+-spec draw_placeholder(input_cfg(), #rect{}, tuition_render:buffer(), tuition_render:style()) ->
+    tuition_render:buffer().
+draw_placeholder(Cfg, Area, Buf, Base) ->
+    case to_bin(maps:get(placeholder, Cfg, <<>>)) of
+        <<>> ->
+            Buf;
+        Placeholder ->
+            tuition_widget:put_line(Buf, Area, 0, 0, Placeholder, placeholder_style(Cfg, Base))
+    end.
+
+%% Overlay the caret onto the cell already at its column: merge `cursor_style' onto
+%% whatever the field just drew there — the value glyph, the placeholder glyph, or
+%% the (possibly parent-painted) blank an unstyled field left transparent — so the
+%% caret keeps the style beneath it instead of punching a default-styled hole
+%% through a coloured parent block. Reading the cell back also means the glyph and
+%% its clipping are already settled: a wide glyph that did not fit was never drawn
+%% (leaving a blank to underline), so there is no edge case to special-case here.
+%% The caret would only fall off the right edge if reconciliation failed to keep it
+%% in view; guard against it anyway.
+-spec draw_caret(
+    input_cfg(),
+    #rect{},
+    tuition_render:buffer(),
+    [{binary(), non_neg_integer()}],
+    non_neg_integer(),
+    non_neg_integer(),
+    integer()
+) -> tuition_render:buffer().
+draw_caret(Cfg, #rect{x = X, y = Y}, Buf, Display, Offset, Cursor, W) ->
+    CaretCol = span(prefix_sums([Width || {_G, Width} <- Display]), Offset, Cursor),
+    case CaretCol < W of
+        false ->
+            Buf;
+        true ->
+            CursorStyle = maps:get(cursor_style, Cfg, ?DEFAULT_CURSOR_STYLE),
+            overlay_cursor(Buf, X + CaretCol, Y, CursorStyle)
+    end.
+
+%% Merge a style's set attributes onto the cell at `{X, Y}', leaving its glyph and
+%% any unset attributes as they are. `wide_cont' can never be the caret cell — the
+%% caret always lands on a cluster boundary, never the right half of a wide glyph —
+%% but it is handled defensively rather than assumed away.
+-spec overlay_cursor(
+    tuition_render:buffer(), non_neg_integer(), non_neg_integer(), tuition_render:style()
+) -> tuition_render:buffer().
+overlay_cursor(Buf, X, Y, Style) ->
+    case tuition_render:cell_at(Buf, X, Y) of
+        #cell{} = Cell -> tuition_render:put_cell(Buf, X, Y, apply_style(Cell, Style));
+        wide_cont -> Buf
+    end.
+
+-spec apply_style(#cell{}, tuition_render:style()) -> #cell{}.
+apply_style(Cell, Style) ->
+    Cell#cell{
+        fg = maps:get(fg, Style, Cell#cell.fg),
+        bg = maps:get(bg, Style, Cell#cell.bg),
+        bold = maps:get(bold, Style, Cell#cell.bold),
+        underline = maps:get(underline, Style, Cell#cell.underline)
+    }.
+
+%% The placeholder text style, with the field's base style merged underneath so a
+%% configured field background (or other base attribute) shows through the
+%% placeholder cells: {@link tuition_widget:put_line/6} writes fresh cells rather
+%% than merging onto the base-filled row, so the base must be carried explicitly
+%% here — the way {@link tuition_list} draws its rows in the base style, and the
+%% caret merges onto the style beneath it. An explicit `placeholder_style' key wins
+%% over the base, so a caller can still override the background.
+-spec placeholder_style(input_cfg(), tuition_render:style()) -> tuition_render:style().
+placeholder_style(Cfg, Base) ->
+    maps:merge(Base, maps:get(placeholder_style, Cfg, ?DEFAULT_PLACEHOLDER_STYLE)).
+
+%%% -- helpers ---------------------------------------------------------
+
+%% The field's top row as a one-row rect — the single line it draws on.
+-spec top_row(#rect{}) -> #rect{}.
+top_row(#rect{x = X, y = Y, w = W}) -> #rect{x = X, y = Y, w = W, h = 1}.
+
+%% Prefix sums of the per-cluster display widths: a tuple `Pre' of `N + 1' entries
+%% where `element(I + 1, Pre)' is the total width of the first `I' clusters. Built
+%% once per reconcile and per draw so any cluster span is one O(1) subtraction
+%% ({@link span/3}); summing a sublist on each scroll step instead would make a
+%% long value's first render O(n²) and could hang the UI on a large paste.
+-spec prefix_sums([non_neg_integer()]) -> tuple().
+prefix_sums(Widths) ->
+    {_Total, Rev} = lists:foldl(
+        fun(Width, {Acc, Sums}) ->
+            Next = Acc + Width,
+            {Next, [Next | Sums]}
+        end,
+        {0, [0]},
+        Widths
+    ),
+    list_to_tuple(lists:reverse(Rev)).
+
+%% Columns spanned by the clusters in `[From, To)', in O(1) from the prefix sums —
+%% the width the caret sits at relative to the offset, and the visible tail width
+%% for scroll reconciliation. `From =< To', both in `[0, N]'.
+-spec span(tuple(), non_neg_integer(), non_neg_integer()) -> non_neg_integer().
+span(Pre, From, To) ->
+    element(To + 1, Pre) - element(From + 1, Pre).
+
+%% One extra column for the caret when it sits past the last cluster (at the end of
+%% the value), so scroll reconciliation reserves room for it; zero otherwise.
+-spec caret_extra(non_neg_integer(), non_neg_integer()) -> 0 | 1.
+caret_extra(N, N) -> 1;
+caret_extra(_Cursor, _N) -> 0.
+
+%% Clamp `V' into `[Lo, Hi]'.
+-spec clamp(integer(), integer(), integer()) -> integer().
+clamp(V, Lo, Hi) -> min(max(V, Lo), Hi).
+
+%% Split a UTF-8 binary into its grapheme clusters, each as a binary — the unit
+%% caret movement and editing step over, so a wide glyph or a base-plus-combining
+%% cluster counts as one.
+-spec clusters(binary()) -> [binary()].
+clusters(Bin) -> clusters(string:next_grapheme(Bin), []).
+
+-spec clusters(term(), [binary()]) -> [binary()].
+clusters([GC | Rest], Acc) when is_integer(GC); is_list(GC) ->
+    clusters(string:next_grapheme(Rest), [grapheme_bin(GC) | Acc]);
+clusters(_Done, Acc) ->
+    lists:reverse(Acc).
+
+%% One grapheme cluster (a codepoint or a codepoint list) as a UTF-8 binary; an
+%% undecodable cluster degrades to empty rather than crashing.
+-spec grapheme_bin(char() | [char()]) -> binary().
+grapheme_bin(GC) ->
+    case unicode:characters_to_binary([GC]) of
+        Bin when is_binary(Bin) -> Bin;
+        _ -> <<>>
+    end.
+
+-spec count_clusters(binary()) -> non_neg_integer().
+count_clusters(Bin) -> length(clusters(Bin)).
+
+%% Join grapheme-cluster binaries back into one value binary.
+-spec join([binary()]) -> binary().
+join(Clusters) -> iolist_to_binary(Clusters).
+
+%% Drop C0/C1 control codepoints so a single-line field never stores a newline,
+%% tab or escape — whether typed, pasted, or set programmatically — that the
+%% renderer would blank anyway and that would muddle caret/word logic.
+-spec sanitize(binary()) -> binary().
+sanitize(Bin) ->
+    <<<<CP/utf8>> || <<CP/utf8>> <= Bin, not is_control(CP)>>.
+
+%% C0 controls and DEL/C1 controls — the codepoints {@link tuition_render} replaces
+%% with a blank rather than emitting raw.
+-spec is_control(char()) -> boolean().
+is_control(CP) -> CP < 16#20 orelse (CP >= 16#7F andalso CP =< 16#9F).
+
+%% Best-effort chardata -> UTF-8 binary; a malformed tail contributes whatever
+%% prefix decoded, matching the tolerance the rest of the widget layer keeps for
+%% untrusted content.
+-spec to_bin(unicode:chardata()) -> binary().
+to_bin(Text) ->
+    case unicode:characters_to_binary(Text) of
+        Bin when is_binary(Bin) -> Bin;
+        {error, Good, _Rest} -> Good;
+        {incomplete, Good, _Rest} -> Good
+    end.

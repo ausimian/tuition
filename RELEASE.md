@@ -25,6 +25,26 @@
   left column). Ticks share the curve's live scale, so a label sits level with the
   value it denotes. All labelling is opt-in — a chart with none of these keys is
   drawn exactly as before.
+- **`tuition_input_field`** — a stateful single-line text input: a rendered,
+  editable field with a caret and horizontal scroll, the affordance a filter,
+  search, or command box is built from (the on-screen counterpart to the
+  `tuition_input` key decoder). `handle/2` folds a decoded key event into the
+  field and reports whether the *value* changed, so a caller re-runs its filter
+  only on real edits: a printable char inserts at the caret; `backspace` /
+  `delete` remove the cluster before / after it; `left` / `right` move one
+  grapheme cluster, or by a word with `ctrl` / `alt` held; `home` / `end` jump to
+  the edges; a bracketed `paste` inserts its text with control bytes (newlines
+  included) stripped; and `enter`, `tab`, and other keys are left for the caller
+  to act on. Movement and scrolling are grapheme-cluster and column aware (via
+  `tuition_widget:display_width/1`), so a wide glyph is one caret step and is
+  never split across the scroll edge; the view slides just far enough to keep the
+  caret visible and pulls back after the value shrinks. The caret is drawn as a
+  styled cell over the glyph beneath it (`cursor_style`, default `underline`;
+  `#{}` to hide it for an unfocused field). `placeholder` shows dimmed while the
+  value is empty, `mask` renders a fixed glyph for a password field, and `style`
+  fills the field width. State (`value` / `cursor` / `offset`) is an
+  `#input_state{}` threaded by the caller, with `new/0`, `value/1`, `set_value/2`,
+  and `cursor/1`. A multi-line textarea is a separate, later widget.
 - **`tuition_barchart`** — a stateless widget for labeled categorical bars,
   complementing the compact, unlabeled `tuition_sparkline` with a readable chart
   of a handful of named quantities (per-scheduler utilisation, a memory-by-type

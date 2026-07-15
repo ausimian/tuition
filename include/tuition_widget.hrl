@@ -25,6 +25,25 @@
     offset = 0 :: non_neg_integer()
 }).
 
+-record(input_state, {
+    %% The field's text, as a UTF-8 binary. Edited through {@link
+    %% tuition_input_field:handle/2} (or replaced wholesale with `set_value/2') and
+    %% read back with `value/1' — the caller never pokes at this directly.
+    value = <<>> :: binary(),
+    %% The caret position, as a 0-based grapheme-cluster index into `value': `0'
+    %% sits before the first cluster, the cluster count sits after the last. {@link
+    %% tuition_input_field} clamps it into range on every render and every edit, so
+    %% an index left stale by a shrunk value can never point out of range. It counts
+    %% clusters, not columns, so a wide glyph is one step under the arrow keys.
+    cursor = 0 :: non_neg_integer(),
+    %% Horizontal scroll offset, as the 0-based grapheme-cluster index of the
+    %% leftmost visible cluster. {@link tuition_input_field} slides it at render time
+    %% so the caret stays within the field's width and returns the adjusted state,
+    %% which is what makes the scroll position survive the immediate-mode rebuild
+    %% each frame — the horizontal analogue of `#list_state.offset'.
+    offset = 0 :: non_neg_integer()
+}).
+
 -record(scrollview_state, {
     %% The top-left corner of the window onto the virtual content: the column
     %% ({@link tuition_scrollview} pans horizontally) and row (vertically) of the
