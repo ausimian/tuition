@@ -7,7 +7,11 @@
 %%% — so a BEAM trend (run-queue length, reductions/s, IO throughput over a
 %%% rolling window) reads as a smooth line rather than a staircase. It is
 %%% ratatui's `Chart' drawn with `Marker::Braille': the dashboard primitive (PRD
-%%% §9.1) the Phase 1 system dashboard's trend panel is built from.
+%%% §9.1) the Phase 1 system dashboard's trend panel is built from. It is built on
+%%% {@link tuition_canvas} — a chart is a canvas with time-series semantics (a
+%%% rolling window, value bounds, an optional axis frame) layered on top: each
+%%% dataset lowers to canvas shapes, so both widgets share the one braille plotting
+%%% path rather than each rasterizing by hand.
 %%%
 %%% == Datasets ==
 %%% One or more datasets share the plot, each a series drawn in its own colour as
@@ -119,7 +123,8 @@
 %%% </ul>
 %%%
 %%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling braille/render/layout/widget/block/clear modules. No third-party code.
+%%% sibling canvas/braille/render/layout/widget/block/clear modules. No third-party
+%%% code.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(tuition_chart).
@@ -224,27 +229,30 @@ plot_window_bounds(Chart, PlotCols) ->
 
 %%% -- plotting --------------------------------------------------------
 
-%% Rasterize every dataset onto one shared braille grid over the plot area, then
-%% composite it in. A shared grid is what makes overlapping cells merge their dots
-%% and take the last dataset's colour (the one-colour-per-cell rule); datasets are
-%% folded in list order so the last wins a collision.
+%% Lower every dataset to {@link tuition_canvas} shapes over the plot area and hand
+%% them to the canvas — the single braille plotting path. The x-axis spans the
+%% sub-pixel column range `{0, PW - 1}', so a sample's column index is its x value;
+%% the y-axis spans the chart's resolved `Bounds', so the canvas does the
+%% value-to-sub-pixel mapping the chart once did by hand. Shapes are listed in
+%% dataset order, so the canvas folds them onto its one shared grid in that order
+%% and the last dataset wins a shared cell's colour — the one-colour-per-cell rule,
+%% carried over for free.
 -spec plot(chart(), #rect{}, {number(), number()}, tuition_render:buffer()) ->
     tuition_render:buffer().
-plot(Chart, Area, {Ymin, Ymax}, Buf) ->
-    Grid0 = tuition_braille:new(Area),
-    {PW, PH} = tuition_braille:dims(Grid0),
+plot(Chart, Area, {Ymin, _Ymax} = Bounds, Buf) ->
+    {PW, _PH} = tuition_braille:dims(tuition_braille:new(Area)),
     WinCount = resolve_window(maps:get(window, Chart, auto), PW),
     XAlign = maps:get(x_align, Chart, left),
     Series = [prepare(D, WinCount) || D <- maps:get(datasets, Chart, [])],
-    Grid1 = lists:foldl(
-        fun({Colour, Marker, Window}, G) ->
+    Shapes = lists:flatmap(
+        fun({Colour, Marker, Window}) ->
             Col0 = col_offset(XAlign, PW, length(Window)),
-            plot_series(G, points(Window, Ymin, Ymax, PH, Col0), Marker, Colour, PH)
+            marker_shapes(Marker, series_points(Window, Col0), Ymin, Colour)
         end,
-        Grid0,
         Series
     ),
-    tuition_braille:render_into(Grid1, Buf).
+    Canvas = #{x_bounds => {0, PW - 1}, y_bounds => Bounds, shapes => Shapes},
+    tuition_canvas:render(Canvas, Area, Buf).
 
 %% A dataset reduced to what plotting needs: its colour, its marker, and the
 %% newest `WinCount' samples of its series (the tail the window shows).
@@ -272,57 +280,45 @@ resolve_window(_Invalid, PW) -> PW.
 col_offset(right, PW, L) -> PW - L;
 col_offset(_Left, _PW, _L) -> 0.
 
-%% Map a window to its sub-pixel points: sample `I' (0-based, left to right)
-%% starting at column `Col0', its value scaled to a row. The list is in the
-%% window's order, so consecutive points are adjacent columns a line can connect.
--spec points([number()], number(), number(), non_neg_integer(), integer()) ->
-    [{integer(), non_neg_integer()}].
-points(Window, Ymin, Ymax, PH, Col0) ->
-    {Points, _} = lists:mapfoldl(
-        fun(V, Col) -> {{Col, value_to_row(V, Ymin, Ymax, PH)}, Col + 1} end,
-        Col0,
-        Window
-    ),
+%% A window as value-space points: sample `I' (0-based, left to right) at x value
+%% `Col0 + I' — its sub-pixel column, since the canvas x-axis spans `{0, PW - 1}' —
+%% paired with its raw y value. The canvas maps each `{X, V}' to a sub-pixel; the
+%% list stays in window order, so consecutive points are adjacent columns a line
+%% can connect.
+-spec series_points([number()], integer()) -> [{integer(), number()}].
+series_points(Window, Col0) ->
+    {Points, _} = lists:mapfoldl(fun(V, Col) -> {{Col, V}, Col + 1} end, Col0, Window),
     Points.
 
-%% Plot one series' points. `scatter' lights each point; `area' fills each point's
-%% column from its value down to the baseline; `line' connects consecutive points
-%% with a rasterized segment (a lone point is just lit, having no neighbour to
-%% connect to). An empty series draws nothing. `PH' is the sub-pixel height, the
-%% baseline the `area' fill reaches to.
--spec plot_series(
-    tuition_braille:grid(),
-    [{integer(), non_neg_integer()}],
-    line | scatter | area,
-    tuition_braille:colour(),
-    non_neg_integer()
-) -> tuition_braille:grid().
-plot_series(Grid, [], _Marker, _Colour, _PH) ->
-    Grid;
-plot_series(Grid, Points, scatter, Colour, _PH) ->
-    lists:foldl(fun({X, Y}, G) -> tuition_braille:set(G, X, Y, Colour) end, Grid, Points);
-plot_series(Grid, Points, area, Colour, PH) ->
-    lists:foldl(fun({X, Y}, G) -> fill_column(G, X, Y, PH, Colour) end, Grid, Points);
-plot_series(Grid, [{X, Y}], line, Colour, _PH) ->
-    tuition_braille:set(Grid, X, Y, Colour);
-plot_series(Grid, [{X0, Y0} | [{X1, Y1} | _] = Rest], line, Colour, PH) ->
-    plot_series(tuition_braille:line(Grid, X0, Y0, X1, Y1, Colour), Rest, line, Colour, PH).
+%% Lower one series' value points to canvas shapes for its marker: `scatter' to a
+%% single `points' shape (a dot per sample); `line' to a `line' segment between
+%% each consecutive pair (a lone sample, with no neighbour to connect to, lowers to
+%% a one-point `points' shape); `area' to one vertical `line' per sample, from the
+%% sample value down to the baseline value `Ymin' (which the canvas maps to the
+%% bottom sub-pixel row) — a one-column-wide vertical line reproducing the old
+%% `fill_column' fill dot for dot. An empty series lowers to no shapes.
+-spec marker_shapes(
+    line | scatter | area, [{integer(), number()}], number(), tuition_braille:colour()
+) -> [tuition_canvas:shape()].
+marker_shapes(_Marker, [], _Ymin, _Colour) ->
+    [];
+marker_shapes(scatter, Points, _Ymin, Colour) ->
+    [{points, Points, Colour}];
+marker_shapes(area, Points, Ymin, Colour) ->
+    [{line, X, V, X, Ymin, Colour} || {X, V} <- Points];
+marker_shapes(line, [Point], _Ymin, Colour) ->
+    [{points, [Point], Colour}];
+marker_shapes(line, Points, _Ymin, Colour) ->
+    line_segments(Points, Colour).
 
-%% Fill one column from `YTop' (a sample's value row) down to the baseline (the
-%% bottom sub-pixel row `PH - 1') — the solid area/column fill below the curve.
-%% `YTop' is already clamped into `[0, PH - 1]' by {@link value_to_row/4}, so the
-%% range is never empty or inverted.
--spec fill_column(
-    tuition_braille:grid(),
-    integer(),
-    non_neg_integer(),
-    non_neg_integer(),
-    tuition_braille:colour()
-) -> tuition_braille:grid().
-fill_column(Grid, X, YTop, PH, Colour) ->
-    lists:foldl(
-        fun(Y, G) -> tuition_braille:set(G, X, Y, Colour) end, Grid, lists:seq(YTop, PH - 1)
-    ).
+%% One `line' shape between each consecutive pair of points — the connected curve.
+%% A one- or zero-point tail has no pair left to connect and ends the list.
+-spec line_segments([{integer(), number()}], tuition_braille:colour()) ->
+    [tuition_canvas:shape()].
+line_segments([{X0, Y0} | [{X1, Y1} | _] = Rest], Colour) ->
+    [{line, X0, Y0, X1, Y1, Colour} | line_segments(Rest, Colour)];
+line_segments(_Fewer, _Colour) ->
+    [].
 
 %%% -- scaling ---------------------------------------------------------
 
@@ -344,8 +340,9 @@ resolve_bounds(auto, Series) ->
 %% `PH - 1'), linearly between, clamped into the plot so a value past explicit
 %% bounds sits on the edge rather than off-grid. A non-positive range (a flat
 %% series, or inverted explicit bounds) has no gradient, so every value is drawn
-%% along the vertical middle. Shared by the plot (sub-pixel `PH') and the y-tick
-%% labels (cell height).
+%% along the vertical middle. Places a y-tick label at the cell row its value maps
+%% to; it mirrors {@link tuition_canvas}'s own value-to-sub-pixel mapping (same
+%% clamp, same middle fallback) so a label sits level with the curve it denotes.
 -spec value_to_row(number(), number(), number(), non_neg_integer()) -> non_neg_integer().
 value_to_row(V, Ymin, Ymax, PH) ->
     Frac =
