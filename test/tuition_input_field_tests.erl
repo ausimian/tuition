@@ -328,6 +328,16 @@ caret_rests_on_a_whole_wide_glyph_test() ->
     ?assertMatch(#cell{cols = 2, underline = true}, cell(B, 0, 0)),
     ?assertEqual(wide_cont, cell(B, 1, 0)).
 
+wide_glyph_under_the_caret_at_the_edge_stays_visible_test() ->
+    %% "ab世" (世 wide) in a 3-column field, caret before 世 (index 2). The offset must
+    %% scroll to 1 so 世 fits whole under the caret ("b世"), not stay at 0 where 世
+    %% starts in the last column and is clipped to an underlined blank.
+    {B, S} = render(#{}, 3, 1, feed(typed(<<"ab", ?WIDE/binary>>), [{key, left, []}])),
+    ?assertEqual(1, S#input_state.offset),
+    ?assertEqual($b, ch(B, 0, 0)),
+    ?assertMatch(#cell{cols = 2, underline = true}, cell(B, 1, 0)),
+    ?assertEqual(wide_cont, cell(B, 2, 0)).
+
 wide_glyph_is_a_single_caret_step_test() ->
     %% 世x: one Right past the wide glyph lands the caret at cluster index 1.
     S = feed(typed(<<16#4E16/utf8, "x">>), [{key, home, []}, {key, right, []}]),

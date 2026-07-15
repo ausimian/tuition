@@ -350,9 +350,11 @@ reconcile(#input_state{value = Value, cursor = Cursor0, offset = Offset0}, Displ
 
 %% Slide the scroll offset (a cluster index) to keep the caret in view within a
 %% `W'-column field. The offset can never sit right of the caret; it is then pushed
-%% right until the columns before the caret fit in `W - 1' (reserving the last
-%% column for the caret itself), and finally pulled back left so the value's tail
-%% does not leave a needless blank gap after an edit shortened it.
+%% right until the columns before the caret leave room for the glyph under the caret
+%% (its own display width — two columns for a wide glyph the caret sits on, so it is
+%% not clipped at the right edge — or one for a caret past the last cluster), and
+%% finally pulled back left so the value's tail does not leave a needless blank gap
+%% after an edit shortened it.
 -spec adjust_offset(
     non_neg_integer(), non_neg_integer(), [{binary(), non_neg_integer()}], integer()
 ) ->
@@ -362,20 +364,35 @@ adjust_offset(_Offset, _Cursor, _Display, W) when W =< 0 ->
 adjust_offset(Offset0, Cursor, Display, W) ->
     Pre = prefix_sums([Width || {_Glyph, Width} <- Display]),
     N = tuple_size(Pre) - 1,
+    CaretW = caret_width(Display, Cursor),
     Capped = min(max(Offset0, 0), Cursor),
-    Pushed = push_right(Capped, Cursor, Pre, W),
-    pull_left(Pushed, Cursor, N, Pre, W).
+    Pushed = push_right(Capped, Cursor, Pre, W, CaretW),
+    pull_left(Pushed, Cursor, N, Pre, W, CaretW).
 
-%% Push the offset right until the caret's column (the width of the clusters
-%% between the offset and the caret) leaves room for the caret cell in `W'. Stops
-%% at the caret at the latest, where that width is zero. Linear in the clusters it
-%% steps over: each step is one O(1) {@link span/3} lookup, so a long value with the
-%% caret at the end (a large paste) reconciles in O(n), not O(n²).
--spec push_right(non_neg_integer(), non_neg_integer(), tuple(), pos_integer()) ->
+%% The columns the caret needs at its position: the display width of the glyph it
+%% sits on (a wide cluster is two, so scrolling reserves room for the whole glyph
+%% rather than clipping it), or one for a caret past the last cluster. Floored at
+%% one so a zero-width cluster under the caret still reserves a column to show it.
+-spec caret_width([{binary(), non_neg_integer()}], non_neg_integer()) -> pos_integer().
+caret_width(Display, Cursor) ->
+    case Cursor < length(Display) of
+        true ->
+            {_Glyph, Width} = lists:nth(Cursor + 1, Display),
+            max(1, Width);
+        false ->
+            1
+    end.
+
+%% Push the offset right until the columns before the caret leave room for the
+%% caret's glyph (`CaretW') in `W'. Stops at the caret at the latest, where that
+%% width is zero. Linear in the clusters it steps over: each step is one O(1) {@link
+%% span/3} lookup, so a long value with the caret at the end (a large paste)
+%% reconciles in O(n), not O(n²).
+-spec push_right(non_neg_integer(), non_neg_integer(), tuple(), pos_integer(), pos_integer()) ->
     non_neg_integer().
-push_right(Offset, Cursor, Pre, W) ->
-    case Offset < Cursor andalso span(Pre, Offset, Cursor) > W - 1 of
-        true -> push_right(Offset + 1, Cursor, Pre, W);
+push_right(Offset, Cursor, Pre, W, CaretW) ->
+    case Offset < Cursor andalso span(Pre, Offset, Cursor) > W - CaretW of
+        true -> push_right(Offset + 1, Cursor, Pre, W, CaretW);
         false -> Offset
     end.
 
@@ -385,22 +402,22 @@ push_right(Offset, Cursor, Pre, W) ->
 %% earlier:
 %%   * the visible tail (the value from that cluster to the end, plus the caret's
 %%     own column when it sits at the very end) still fits in `W'; and
-%%   * the caret column still fits — pulling left widens the columns before the
-%%     caret, and a zero-width cluster *after* the caret can make the total tail fit
-%%     while the caret column would not, so this is checked in its own right rather
-%%     than folded into the tail width (else the caret is pushed off the right edge
-%%     and {@link draw_caret/7} draws nothing).
+%%   * the caret still fits with room for its glyph (`CaretW') — pulling left widens
+%%     the columns before the caret, and a zero-width cluster *after* the caret can
+%%     make the total tail fit while the caret column would not, so this is checked
+%%     in its own right rather than folded into the tail width (else the caret is
+%%     pushed off the right edge and {@link draw_caret/7} draws nothing).
 -spec pull_left(
-    non_neg_integer(), non_neg_integer(), non_neg_integer(), tuple(), pos_integer()
+    non_neg_integer(), non_neg_integer(), non_neg_integer(), tuple(), pos_integer(), pos_integer()
 ) -> non_neg_integer().
-pull_left(0, _Cursor, _N, _Pre, _W) ->
+pull_left(0, _Cursor, _N, _Pre, _W, _CaretW) ->
     0;
-pull_left(Offset, Cursor, N, Pre, W) ->
+pull_left(Offset, Cursor, N, Pre, W, CaretW) ->
     CaretExtra = caret_extra(Cursor, N),
     TailFits = span(Pre, Offset - 1, N) + CaretExtra =< W,
-    CaretFits = span(Pre, Offset - 1, Cursor) =< W - 1,
+    CaretFits = span(Pre, Offset - 1, Cursor) =< W - CaretW,
     case TailFits andalso CaretFits of
-        true -> pull_left(Offset - 1, Cursor, N, Pre, W);
+        true -> pull_left(Offset - 1, Cursor, N, Pre, W, CaretW);
         false -> Offset
     end.
 
