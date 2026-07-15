@@ -119,6 +119,15 @@ word_left_lands_at_the_start_of_the_word_test() ->
     S2 = feed(S1, [{key, left, [ctrl]}]),
     ?assertEqual(4, tuition_input_field:cursor(S2)).
 
+word_motion_over_a_long_word_scans_once_test() ->
+    %% A long single word: ctrl+Left from the end reaches index 0 and alt+Right from
+    %% home reaches the end, each in one linear scan (not O(n^2) list indexing).
+    N = 1000,
+    Home = feed(typed(binary:copy(<<"a">>, N)), [{key, left, [ctrl]}]),
+    ?assertEqual(0, tuition_input_field:cursor(Home)),
+    End = feed(Home, [{key, right, [alt]}]),
+    ?assertEqual(N, tuition_input_field:cursor(End)).
+
 word_right_lands_past_the_word_test() ->
     %% From the start, alt+right steps to the end of "foo" (3), then "bar" (7).
     S1 = feed(typed(<<"foo bar baz">>), [{key, home, []}, {key, right, [alt]}]),

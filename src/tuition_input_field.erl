@@ -259,42 +259,28 @@ move_right(#input_state{value = Value, cursor = Cursor} = State, Word) ->
     State#input_state{cursor = New}.
 
 %% Skip any spaces to the left of `At', then the run of non-spaces beside them —
-%% landing at the start of the word the caret was in or just past.
+%% landing at the start of the word the caret was in or just past. Scans the slice
+%% left of the caret once (nearest cluster first) rather than indexing the list per
+%% step, so a word move over an N-cluster word is O(N), not O(N²).
 -spec word_left([binary()], non_neg_integer()) -> non_neg_integer().
 word_left(Clusters, At) ->
-    OverSpaces = skip_left(Clusters, At, true),
-    skip_left(Clusters, OverSpaces, false).
+    Left = lists:reverse(lists:sublist(Clusters, At)),
+    At - skip_word(Left).
 
 %% Skip any spaces to the right of `At', then the run of non-spaces beside them —
-%% landing just past the next word.
+%% landing just past the next word. Scans the slice at/after the caret once, so the
+%% move is O(N) rather than O(N²).
 -spec word_right([binary()], non_neg_integer()) -> non_neg_integer().
 word_right(Clusters, At) ->
-    OverSpaces = skip_right(Clusters, At, length(Clusters), true),
-    skip_right(Clusters, OverSpaces, length(Clusters), false).
+    At + skip_word(lists:nthtail(At, Clusters)).
 
-%% Step left from `At' while the cluster immediately to the left is (or is not,
-%% when `WantSpace' is `false') a space. `At' counts clusters to the caret's left,
-%% so the cluster just left of it is the `At'th (1-based) — `lists:nth(At, _)'.
--spec skip_left([binary()], non_neg_integer(), boolean()) -> non_neg_integer().
-skip_left(_Clusters, 0, _WantSpace) ->
-    0;
-skip_left(Clusters, At, WantSpace) ->
-    case is_space(lists:nth(At, Clusters)) =:= WantSpace of
-        true -> skip_left(Clusters, At - 1, WantSpace);
-        false -> At
-    end.
-
-%% Step right from `At' while the cluster at the caret (the `At'th, 0-based —
-%% `lists:nth(At + 1, _)') is (or is not) a space, stopping at the end `N'.
--spec skip_right([binary()], non_neg_integer(), non_neg_integer(), boolean()) ->
-    non_neg_integer().
-skip_right(_Clusters, N, N, _WantSpace) ->
-    N;
-skip_right(Clusters, At, N, WantSpace) ->
-    case is_space(lists:nth(At + 1, Clusters)) =:= WantSpace of
-        true -> skip_right(Clusters, At + 1, N, WantSpace);
-        false -> At
-    end.
+%% How many clusters a word move crosses over `Clusters' (ordered nearest-to-caret
+%% first): the leading run of spaces, then the run of non-spaces beside it.
+-spec skip_word([binary()]) -> non_neg_integer().
+skip_word(Clusters) ->
+    {Spaces, Rest} = lists:splitwith(fun is_space/1, Clusters),
+    {Word, _Tail} = lists:splitwith(fun(Cluster) -> not is_space(Cluster) end, Rest),
+    length(Spaces) + length(Word).
 
 %% Whether a cluster is a word separator. A word boundary is an ASCII space: it is
 %% the separator a filter/command box types, and control bytes (tabs included) are
