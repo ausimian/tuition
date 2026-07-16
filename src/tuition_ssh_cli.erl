@@ -24,7 +24,16 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(tuition_ssh_cli).
+%% The `ssh_server_channel' behaviour lints our callbacks against OTP `ssh'. It
+%% is a compile-time check only, with no runtime effect. rebar3 compiles with all
+%% of OTP on the code path, so it resolves. Mix scopes the compile path to the
+%% declared applications, and `ssh' is deliberately not one of ours -- it must not
+%% become a started runtime dependency (see `application/0' in mix.exs) -- so the
+%% Mix build defines `TUITION_NO_SSH_BEHAVIOUR' to skip the lint. The exported
+%% callbacks below are identical either way.
+-ifndef(TUITION_NO_SSH_BEHAVIOUR).
 -behaviour(ssh_server_channel).
+-endif.
 
 -export([init/1, handle_ssh_msg/2, handle_msg/2, terminate/2]).
 
