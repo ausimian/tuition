@@ -87,4 +87,3 @@ to_binary(Data) ->
     catch
         error:badarg -> {error, non_byte_payload}
     end.
-

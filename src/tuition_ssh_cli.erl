@@ -65,7 +65,8 @@ init([PaneSpecs | _Extra]) when is_list(PaneSpecs) ->
     init([PaneSpecs, #{}]).
 
 -spec handle_ssh_msg(term(), state()) -> {ok, state()} | {stop, integer(), state()}.
-handle_ssh_msg({ssh_cm, Cm, {pty, ChannelId, WantReply, {_Term, Width, Height, _PixW, _PixH, _Modes}}},
+handle_ssh_msg(
+    {ssh_cm, Cm, {pty, ChannelId, WantReply, {_Term, Width, Height, _PixW, _PixH, _Modes}}},
     State
 ) ->
     State1 = State#st{cm = Cm, channel_id = ChannelId, size = size(Width, Height)},

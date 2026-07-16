@@ -20,4 +20,3 @@ send_eof(Sink, ChannelId) ->
 exit_status(Sink, ChannelId, Status) ->
     Sink ! {?MODULE, exit_status, ChannelId, Status},
     ok.
-
