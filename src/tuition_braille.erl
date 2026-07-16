@@ -11,13 +11,13 @@
 %%% ratatui's `Grid'/`BrailleGrid': the pixel buffer under `Canvas' and `Chart'.
 %%%
 %%% == Shape rasterizers ==
-%%% Alongside the single-dot {@link set/3}/{@link set/4}, the kernel offers three
+%%% Alongside the single-dot {@link set/3}/{@link set/4}, the kernel offers the
 %%% straight/curved rasterizers a shape front-end ({@link tuition_canvas}) plots
 %%% with: {@link line/6} (Bresenham segment), {@link rect/6} (axis-aligned
-%%% rectangle outline) and {@link circle/5} (midpoint circle outline). Each takes
-%%% sub-pixel coordinates and lights every dot it crosses, dropping the ones
-%%% outside the field per {@link set/4}, so a shape may over-run the edge and the
-%%% visible part still draws.
+%%% rectangle outline), {@link fill_rect/6} (the same rectangle filled solid) and
+%%% {@link circle/5} (midpoint circle outline). Each takes sub-pixel coordinates
+%%% and lights every dot it crosses, dropping the ones outside the field per {@link
+%%% set/4}, so a shape may over-run the edge and the visible part still draws.
 %%%
 %%% == Not a widget ==
 %%% Like {@link tuition_width}, this is an internal shared helper, not a {@link
@@ -59,7 +59,9 @@
 
 -include("tuition_layout.hrl").
 
--export([new/1, dims/1, set/3, set/4, line/6, rect/6, circle/5, render_into/2, render_into/3]).
+-export([
+    new/1, dims/1, set/3, set/4, line/6, rect/6, fill_rect/6, circle/5, render_into/2, render_into/3
+]).
 
 %% A cell colour — the `fg' a braille cell paints its dots in. Mirrors the colour
 %% half of {@link tuition_render:style()}; `default' leaves the cell's foreground
@@ -208,6 +210,34 @@ rect(Grid, X0, Y0, X1, Y1, Colour) ->
     G2 = line(G1, X0, Y1, X1, Y1, Colour),
     G3 = line(G2, X0, Y0, X0, Y1, Colour),
     line(G3, X1, Y0, X1, Y1, Colour).
+
+%% @doc Rasterize the *solid* axis-aligned rectangle spanned by the two opposite
+%% corners `{X0, Y0}' and `{X1, Y1}' in `Colour' — its whole interior lit, not just
+%% the {@link rect/6} outline. The corners may be given in any order (the rectangle
+%% is the bounding box of the two points); a degenerate span fills the line or the
+%% single dot the corners describe.
+%%
+%% The fill is a fold of horizontal {@link line/6} spans, one per sub-pixel row the
+%% rectangle covers. The span is intersected with the field first, so a rectangle
+%% over-running the edge fills only its on-grid part and — unlike a raw per-row walk
+%% — a runaway corner cannot drive the fold beyond the grid it could ever light (a
+%% rectangle wholly off the field draws nothing).
+-spec fill_rect(grid(), integer(), integer(), integer(), integer(), colour()) -> grid().
+fill_rect(#grid{rect = #rect{w = W, h = H}} = Grid, X0, Y0, X1, Y1, Colour) ->
+    XLo = max(min(X0, X1), 0),
+    XHi = min(max(X0, X1), W * 2 - 1),
+    YLo = max(min(Y0, Y1), 0),
+    YHi = min(max(Y0, Y1), H * 4 - 1),
+    case XLo =< XHi andalso YLo =< YHi of
+        false ->
+            Grid;
+        true ->
+            lists:foldl(
+                fun(Y, G) -> line(G, XLo, Y, XHi, Y, Colour) end,
+                Grid,
+                lists:seq(YLo, YHi)
+            )
+    end.
 
 %% @doc Rasterize the outline of the circle centred at `{CX, CY}' with radius `R'
 %% sub-pixels in `Colour' — the integer midpoint-circle algorithm, mirroring each

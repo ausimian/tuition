@@ -4,15 +4,15 @@
   sub-cell kernel: the caller names its own value coordinate system
   (`x_bounds` / `y_bounds`, with the y-axis pointing up as in ordinary Cartesian
   coordinates) and draws a list of `shapes` into it — `{line, ...}`,
-  `{points, ...}`, `{rect, ...}` (outline) and `{circle, ...}`, each in its own
-  colour. Shapes are drawn in order onto one shared grid, so overlapping cells
-  merge their dots and take the later shape's colour (the one-colour-per-cell
-  rule). A coordinate outside its bounds clamps to the nearest edge; an
-  unrecognised shape is ignored (forward-compatible); an optional `background`
-  fills the area (and shows through under the glyph cells) and `style` sets the
-  base glyph attributes. This is ratatui's `Canvas`, the general surface `Chart`
-  specialises. The braille kernel gains `rect/6` and `circle/5` rasterizers
-  (alongside `line/6`) to support it.
+  `{points, ...}`, `{rect, ...}` (outline), `{fill_rect, ...}` (solid) and
+  `{circle, ...}`, each in its own colour. Shapes are drawn in order onto one
+  shared grid, so overlapping cells merge their dots and take the later shape's
+  colour (the one-colour-per-cell rule). A coordinate outside its bounds clamps
+  to the nearest edge; an unrecognised shape is ignored (forward-compatible); an
+  optional `background` fills the area (and shows through under the glyph cells)
+  and `style` sets the base glyph attributes. This is ratatui's `Canvas`, the
+  general surface `Chart` specialises. The braille kernel gains `rect/6`,
+  `fill_rect/6` and `circle/5` rasterizers (alongside `line/6`) to support it.
 - **`tuition_chart` legend and labelled axes** — the chart can now label itself
   instead of leaving it all to the caller. Datasets take an optional `name`, and
   `legend => #{position, style}` floats a small boxed colour-swatch key in a plot
