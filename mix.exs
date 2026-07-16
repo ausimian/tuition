@@ -7,10 +7,8 @@ defmodule Tuition.MixProject do
   # Mixfile-evaluation time; `@external_resource` recompiles dependents on edit.
   @app_src "src/tuition.app.src"
   @external_resource @app_src
-  @version (case :file.consult(@app_src) do
-              {:ok, [{:application, :tuition, props}]} ->
-                props |> Keyword.fetch!(:vsn) |> List.to_string()
-            end)
+  {:ok, [{:application, :tuition, props}]} = :file.consult(@app_src)
+  @version props |> Keyword.fetch!(:vsn) |> List.to_string()
 
   @source_url "https://github.com/ausimian/tuition"
 
