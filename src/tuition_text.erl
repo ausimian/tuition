@@ -300,19 +300,26 @@ as_bin(Other) -> to_bin(Other).
 classify_text(Bin) when is_binary(Bin) ->
     [Bin];
 classify_text(List) when is_list(List) ->
-    case lists:any(fun is_line_element/1, List) of
+    case has_line_element(List) of
         true -> List;
         false -> [List]
     end;
 classify_text(Other) ->
     [Other].
 
+%% Does a (possibly improper) list carry a nested line element? Walked directly,
+%% not via `lists:any/2', so a plain improper iolist (`[<<"a">> | <<"b">>]', a
+%% binary tail) is tolerated as "no line" rather than crashing the scan.
+-spec has_line_element(nonempty_maybe_improper_list()) -> boolean().
+has_line_element([H | T]) -> is_line_element(H) orelse has_line_element(T);
+has_line_element(_Tail) -> false.
+
 %% A list element that is itself a line — a list carrying at least one span. Only a
 %% nested span-list marks the outer value as a list of lines; a bare binary or a
 %% char list (plain chardata) never does, keeping the plain multi-line path on
 %% `\n'.
 -spec is_line_element(term()) -> boolean().
-is_line_element(E) when is_list(E) -> lists:any(fun is_span/1, E);
+is_line_element(E) when is_list(E) -> has_span(E);
 is_line_element(_) -> false.
 
 %% Normalise one line input to canonical spans, keeping empty runs (the `\n'
@@ -321,7 +328,7 @@ is_line_element(_) -> false.
 to_spans(Bin) when is_binary(Bin) ->
     [{Bin, #{}}];
 to_spans(List) when is_list(List) ->
-    case lists:any(fun is_span/1, List) of
+    case has_span(List) of
         true -> [elem_to_span(E) || E <- List];
         false -> [{to_bin(List), #{}}]
     end;
@@ -330,6 +337,14 @@ to_spans(Span) ->
         true -> [norm_span(Span)];
         false -> [{to_bin(Span), #{}}]
     end.
+
+%% Does a (possibly improper) list contain a span element? Walked directly rather
+%% than via `lists:any/2' so an improper iolist tail — a plain-chardata binary tail
+%% the old widgets accepted (`[<<"a">> | <<"b">>]') — is tolerated as "no span"
+%% instead of crashing the scan; such input stays plain chardata, as it was.
+-spec has_span(nonempty_maybe_improper_list()) -> boolean().
+has_span([H | T]) -> is_span(H) orelse has_span(T);
+has_span(_Tail) -> false.
 
 %% A list element inside a line: a span in either shape, or bare chardata (a
 %% default-styled run).
@@ -361,12 +376,12 @@ split_line_nl(Input) ->
     split_spans_nl(to_spans(Input)).
 
 %% Split a span list into lines at `\n' boundaries, carrying each span's style onto
-%% every piece it is broken into. `\r\n' is tolerated by stripping a trailing `\r'
-%% from each piece.
+%% every piece it is broken into. `\r\n' is tolerated by dropping the `\r' as each
+%% line is closed (see {@link close_line/1}).
 -spec split_spans_nl([span()]) -> [line()].
 split_spans_nl(Spans) ->
     {LinesRev, CurRev} = lists:foldl(fun split_span/2, {[], []}, Spans),
-    Lines = lists:reverse([lists:reverse(CurRev) | LinesRev]),
+    Lines = lists:reverse([close_line(CurRev) | LinesRev]),
     [drop_empty(Line) || Line <- Lines].
 
 %% Fold one span into the {completed-lines, current-line} accumulator (both
@@ -374,13 +389,23 @@ split_spans_nl(Spans) ->
 %% closes the current line and starts a fresh one with the following piece.
 -spec split_span(span(), {[line()], [span()]}) -> {[line()], [span()]}.
 split_span({Text, Style}, {LinesRev, CurRev}) ->
-    [First | Rest] = [strip_cr(Piece) || Piece <- binary:split(to_bin(Text), <<"\n">>, [global])],
+    [First | Rest] = binary:split(to_bin(Text), <<"\n">>, [global]),
     Cur1 = [{First, Style} | CurRev],
     lists:foldl(
-        fun(Piece, {LR, CR}) -> {[lists:reverse(CR) | LR], [{Piece, Style}]} end,
+        fun(Piece, {LR, CR}) -> {[close_line(CR) | LR], [{Piece, Style}]} end,
         {LinesRev, Cur1},
         Rest
     ).
+
+%% Finalise a reversed line accumulator into an in-order line, dropping a single
+%% trailing `\r' from its last span. That `\r' sits immediately before the `\n'
+%% that ends the line (or before end-of-text), so it is the CR of a CRLF break; a
+%% `\r' anywhere else — mid-line, including at a span boundary the line continues
+%% past — stays and renders as a blank column, exactly as the same text renders
+%% when it is not split into spans.
+-spec close_line([span()]) -> line().
+close_line([]) -> [];
+close_line([{Bin, Style} | Rest]) -> lists:reverse([{strip_cr(Bin), Style} | Rest]).
 
 %%% -- small utilities -------------------------------------------------
 

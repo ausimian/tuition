@@ -183,3 +183,10 @@ styled_item_draws_after_symbol_gutter_test() ->
     {B, _} = render(Cfg, 8, 1, tuition_list:select(tuition_list:new(), 0)),
     ?assertEqual($>, ch(B, 0, 0)),
     ?assertMatch(#cell{char = $h, fg = 1}, cell(B, 2, 0)).
+
+improper_iolist_item_renders_test() ->
+    %% A plain improper iolist item (binary tail) is chardata the widget accepted
+    %% before styled text; it must render, not crash the span-detection scan.
+    {B, _} = render(#{items => [[<<"fo">> | <<"o">>]]}, 8, 1, tuition_list:new()),
+    ?assertEqual($f, ch(B, 0, 0)),
+    ?assertEqual($o, ch(B, 2, 0)).

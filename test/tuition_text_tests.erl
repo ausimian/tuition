@@ -58,6 +58,12 @@ line_drops_empty_spans_test() ->
         tuition_text:line([{<<>>, #{fg => 1}}, {<<"x">>, #{}}])
     ).
 
+line_accepts_improper_iolist_test() ->
+    %% A plain improper iolist (binary tail) is chardata the old widgets accepted;
+    %% the span-detection scan must tolerate it rather than crash.
+    ?assertEqual([{<<"foobar">>, #{}}], tuition_text:line([<<"foo">> | <<"bar">>])),
+    ?assertEqual([{<<"ab">>, #{}}], tuition_text:line([$a | <<"b">>])).
+
 %%% -- lines/1 normalisation -------------------------------------------
 
 lines_splits_plain_text_on_newline_test() ->
@@ -108,6 +114,25 @@ lines_newline_across_spans_test() ->
     ?assertEqual(
         [[{<<"a">>, #{fg => 1}}], [{<<"b">>, #{fg => 1}}, {<<"c">>, #{fg => 2}}]],
         tuition_text:lines([{<<"a\nb">>, #{fg => 1}}, {<<"c">>, #{fg => 2}}])
+    ).
+
+lines_accepts_improper_iolist_test() ->
+    ?assertEqual([[{<<"foobar">>, #{}}]], tuition_text:lines([<<"foo">> | <<"bar">>])).
+
+lines_keeps_mid_line_cr_across_spans_test() ->
+    %% A CR at a span boundary that is not a CRLF break is kept (it renders as a
+    %% blank column), so splitting `a\rb' into spans does not silently drop it.
+    ?assertEqual(
+        [[{<<"a\r">>, #{fg => 1}}, {<<"b">>, #{fg => 2}}]],
+        tuition_text:lines([{<<"a\r">>, #{fg => 1}}, {<<"b">>, #{fg => 2}}])
+    ).
+
+lines_strips_crlf_and_trailing_cr_test() ->
+    %% A `\r' before a `\n' (CRLF) and a `\r' at end-of-text are dropped, matching
+    %% how the same plain text splits.
+    ?assertEqual(
+        [[{<<"a">>, #{fg => 1}}], [{<<"b">>, #{fg => 1}}]],
+        tuition_text:lines([{<<"a\r\nb\r">>, #{fg => 1}}])
     ).
 
 %%% -- line_width ------------------------------------------------------
