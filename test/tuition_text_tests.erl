@@ -135,6 +135,15 @@ lines_strips_crlf_and_trailing_cr_test() ->
         tuition_text:lines([{<<"a\r\nb\r">>, #{fg => 1}}])
     ).
 
+lines_strips_crlf_split_across_spans_test() ->
+    %% A CRLF whose CR and LF fall in different spans is still a line break: the CR
+    %% is dropped even though the `\n' arrives in the next span (whose leading empty
+    %% piece must not absorb the strip), matching plain `a\r\nb'.
+    ?assertEqual(
+        [[{<<"a">>, #{fg => 1}}], [{<<"b">>, #{fg => 2}}]],
+        tuition_text:lines([{<<"a\r">>, #{fg => 1}}, {<<"\nb">>, #{fg => 2}}])
+    ).
+
 %%% -- line_width ------------------------------------------------------
 
 line_width_sums_spans_test() ->

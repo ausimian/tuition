@@ -398,14 +398,24 @@ split_span({Text, Style}, {LinesRev, CurRev}) ->
     ).
 
 %% Finalise a reversed line accumulator into an in-order line, dropping a single
-%% trailing `\r' from its last span. That `\r' sits immediately before the `\n'
-%% that ends the line (or before end-of-text), so it is the CR of a CRLF break; a
-%% `\r' anywhere else — mid-line, including at a span boundary the line continues
-%% past — stays and renders as a blank column, exactly as the same text renders
-%% when it is not split into spans.
+%% trailing `\r' from its last non-empty span. That `\r' sits immediately before
+%% the `\n' that ends the line (or before end-of-text), so it is the CR of a CRLF
+%% break; a `\r' anywhere else — mid-line, including at a span boundary the line
+%% continues past — stays and renders as a blank column, exactly as the same text
+%% renders when it is not split into spans.
 -spec close_line([span()]) -> line().
-close_line([]) -> [];
-close_line([{Bin, Style} | Rest]) -> lists:reverse([{strip_cr(Bin), Style} | Rest]).
+close_line(SpansRev) ->
+    lists:reverse(strip_trailing_cr(SpansRev)).
+
+%% Strip one trailing `\r' from the last non-empty span of a reversed line. Empty
+%% spans at the head (in-order: the tail of the line) carry no `\r' and are passed
+%% over — a following span that began with the line's terminating `\n' contributes
+%% such an empty piece, and the CR to drop sits on the span before it, so the strip
+%% must skip past the empty piece to reach it.
+-spec strip_trailing_cr([span()]) -> [span()].
+strip_trailing_cr([]) -> [];
+strip_trailing_cr([{<<>>, _Style} = Empty | Rest]) -> [Empty | strip_trailing_cr(Rest)];
+strip_trailing_cr([{Bin, Style} | Rest]) -> [{strip_cr(Bin), Style} | Rest].
 
 %%% -- small utilities -------------------------------------------------
 
