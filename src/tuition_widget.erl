@@ -10,9 +10,9 @@
 %%%
 %%% == The seam ==
 %%% A widget is a module implementing the {@link render/3} callback:
-%%% ```
+%%% <pre>
 %%%   render(Config, Area :: #rect{}, Buf :: buffer()) -> buffer()
-%%% '''
+%%% </pre>
 %%% `Config' is the widget's content and styling (the "self" a ratatui widget
 %%% carries), `Area' is the {@link tuition_layout} rect it must confine itself to,
 %%% and it returns the buffer with its cells drawn in — composing with the diff
@@ -31,9 +31,9 @@
 %%% widget ({@link tuition_list}, {@link tuition_table}, {@link tuition_tree},
 %%% {@link tuition_scrollview} and {@link tuition_input_field}) instead takes that
 %%% state as an explicit argument and returns the updated value:
-%%% ```
+%%% <pre>
 %%%   render(Config, Area, Buf, State) -> {buffer(), State}
-%%% '''
+%%% </pre>
 %%% The state (see `include/tuition_widget.hrl') lives in the application/UI state
 %%% and is threaded by the caller across frames. This is ratatui's `StatefulWidget'
 %%% split, made explicit because Erlang has no `&mut'.

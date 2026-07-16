@@ -16,10 +16,10 @@
 %%% state transition the caller applies to each decoded event, and {@link render/4}
 %%% takes the state and returns it with the scroll offset reconciled to keep the
 %%% caret in view:
-%%% ```
+%%% <pre>
 %%%   {State1, _Changed} = tuition_input_field:handle(Event, State0),
 %%%   {Buf1, State2}     = tuition_input_field:render(Cfg, Area, Buf0, State1).
-%%% '''
+%%% </pre>
 %%% This is ratatui's `StatefulWidget' split, made explicit because Erlang has no
 %%% `&mut'.
 %%%

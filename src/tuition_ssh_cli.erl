@@ -3,14 +3,14 @@
 %%%
 %%% Use this module as the daemon's custom `ssh_cli' callback:
 %%%
-%%% ```
+%%% <pre>
 %%% ssh:start(),
 %%% {ok, Daemon} = ssh:daemon(Port, [
 %%%     {system_dir, SystemDir},
 %%%     {user_dir, UserDir},
 %%%     {ssh_cli, {tuition_ssh_cli, [PaneSpecs, ShellOpts]}}
 %%% ]).
-%%% ```
+%%% </pre>
 %%%
 %%% `PaneSpecs' is the same non-empty list passed to {@link tuition_shell:start/2}
 %%% locally. The pane modules and {@link tuition_shell} do not learn about SSH;

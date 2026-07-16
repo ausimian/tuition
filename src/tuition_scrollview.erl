@@ -31,10 +31,10 @@
 %%% scrollable range for the current content and viewport, so a window left past the
 %%% edge by shrunk content or a grown pane is pulled back into range. Scrolling is a
 %%% pure state transition the caller applies to input:
-%%% ```
+%%% <pre>
 %%%   State1 = tuition_scrollview:scroll_by(State0, 0, 1),   %% on Down
 %%%   {Buf1, State2} = tuition_scrollview:render(Cfg, Area, Buf0, State1).
-%%% '''
+%%% </pre>
 %%%
 %%% == Scrollbars ==
 %%% `scrollbars' composes {@link tuition_scrollbar} onto the edges: `vertical' takes

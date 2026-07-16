@@ -19,7 +19,9 @@
 %%% == Layout ==
 %%% Titles are drawn along the top row of `Area', left to right, each surrounded
 %%% by `padding' blank columns, with a `divider' glyph between adjacent titles:
-%%% ``` │ pane a │ pane b │ pane c │ '''
+%%% <pre>
+%%%  │ pane a │ pane b │ pane c │
+%%% </pre>
 %%% The whole strip is aligned within `Area' by `title_align' — flush left by
 %%% default, or centred/right when the titles are narrower than the area. Give the
 %%% widget a one-row strip (reserve it with {@link tuition_layout}, typically at

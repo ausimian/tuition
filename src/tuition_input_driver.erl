@@ -13,7 +13,7 @@
 %%% end-to-end and gives that loop a single primitive to build on.
 %%%
 %%% Typical use — call {@link poll/3} in a loop, threading the parser state:
-%%% ```
+%%% <pre>
 %%%   loop(Handle, St0) ->
 %%%       case tuition_input_driver:poll(Handle, St0, 1000) of
 %%%           {ok, Events, St1} ->
@@ -22,7 +22,7 @@
 %%%           {error, Reason} ->
 %%%               {stopped, Reason}
 %%%       end.
-%%% '''
+%%% </pre>
 %%% @end
 %%%-------------------------------------------------------------------
 -module(tuition_input_driver).
