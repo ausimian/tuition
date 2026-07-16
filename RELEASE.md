@@ -30,19 +30,28 @@
   `expanded` and its parent's visible-row index), so navigation this widget does
   not impose — jump-to-parent, step-into-child — is built from one source of truth
   rather than re-derived.
+- **`tuition_block` border types and padding** — the frame every pane sits in
+  gains two cosmetic controls. `border_type` selects the line/corner glyph set —
+  `light` (default), `rounded` (light runs with rounded corners), `double` or
+  `thick` — with the per-side subset logic unchanged, so a partial border draws
+  the chosen glyphs on just the requested sides. `padding` insets the content
+  rect returned by `inner/2` beyond the border: `0` (default), a uniform `N`, or
+  a `{Top, Right, Bottom, Left}` tuple, clamped so the inner rect never goes
+  negative; the drawn border and title are unaffected. Both default to today's
+  output exactly, so existing blocks render unchanged.
 - **`tuition_canvas`** — a stateless freeform drawing widget over the braille
   sub-cell kernel: the caller names its own value coordinate system
   (`x_bounds` / `y_bounds`, with the y-axis pointing up as in ordinary Cartesian
   coordinates) and draws a list of `shapes` into it — `{line, ...}`,
-  `{points, ...}`, `{rect, ...}` (outline) and `{circle, ...}`, each in its own
-  colour. Shapes are drawn in order onto one shared grid, so overlapping cells
-  merge their dots and take the later shape's colour (the one-colour-per-cell
-  rule). A coordinate outside its bounds clamps to the nearest edge; an
-  unrecognised shape is ignored (forward-compatible); an optional `background`
-  fills the area (and shows through under the glyph cells) and `style` sets the
-  base glyph attributes. This is ratatui's `Canvas`, the general surface `Chart`
-  specialises. The braille kernel gains `rect/6` and `circle/5` rasterizers
-  (alongside `line/6`) to support it.
+  `{points, ...}`, `{rect, ...}` (outline), `{fill_rect, ...}` (solid) and
+  `{circle, ...}`, each in its own colour. Shapes are drawn in order onto one
+  shared grid, so overlapping cells merge their dots and take the later shape's
+  colour (the one-colour-per-cell rule). A coordinate outside its bounds clamps
+  to the nearest edge; an unrecognised shape is ignored (forward-compatible); an
+  optional `background` fills the area (and shows through under the glyph cells)
+  and `style` sets the base glyph attributes. This is ratatui's `Canvas`, the
+  general surface `Chart` specialises. The braille kernel gains `rect/6`,
+  `fill_rect/6` and `circle/5` rasterizers (alongside `line/6`) to support it.
 - **`tuition_chart` legend and labelled axes** — the chart can now label itself
   instead of leaving it all to the caller. Datasets take an optional `name`, and
   `legend => #{position, style}` floats a small boxed colour-swatch key in a plot

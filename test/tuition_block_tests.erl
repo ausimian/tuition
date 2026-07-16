@@ -75,6 +75,63 @@ degenerate_area_is_a_noop_test() ->
         B0, tuition_block:render(#{borders => all}, #rect{x = 0, y = 0, w = 4, h = 0}, B0)
     ).
 
+%%% -- border_type -----------------------------------------------------
+
+default_border_type_is_light_test() ->
+    %% An absent border_type reproduces the light glyph set exactly.
+    B = tuition_block:render(#{borders => all}, #rect{x = 0, y = 0, w = 4, h = 3}, buf(4, 3)),
+    ?assertEqual(?TOP_LEFT, ch(B, 0, 0)),
+    ?assertEqual(?HORIZ, ch(B, 1, 0)),
+    ?assertEqual(?VERT, ch(B, 0, 1)).
+
+rounded_border_rounds_only_the_corners_test() ->
+    B = tuition_block:render(
+        #{borders => all, border_type => rounded}, #rect{x = 0, y = 0, w = 4, h = 3}, buf(4, 3)
+    ),
+    ?assertEqual(16#256D, ch(B, 0, 0)),
+    ?assertEqual(16#256E, ch(B, 3, 0)),
+    ?assertEqual(16#2570, ch(B, 0, 2)),
+    ?assertEqual(16#256F, ch(B, 3, 2)),
+    %% The straight runs stay the light glyphs.
+    ?assertEqual(?HORIZ, ch(B, 1, 0)),
+    ?assertEqual(?VERT, ch(B, 0, 1)).
+
+double_border_uses_double_glyphs_test() ->
+    B = tuition_block:render(
+        #{borders => all, border_type => double}, #rect{x = 0, y = 0, w = 4, h = 3}, buf(4, 3)
+    ),
+    ?assertEqual(16#2554, ch(B, 0, 0)),
+    ?assertEqual(16#2557, ch(B, 3, 0)),
+    ?assertEqual(16#255A, ch(B, 0, 2)),
+    ?assertEqual(16#255D, ch(B, 3, 2)),
+    ?assertEqual(16#2550, ch(B, 1, 0)),
+    ?assertEqual(16#2551, ch(B, 0, 1)).
+
+thick_border_uses_heavy_glyphs_test() ->
+    B = tuition_block:render(
+        #{borders => all, border_type => thick}, #rect{x = 0, y = 0, w = 4, h = 3}, buf(4, 3)
+    ),
+    ?assertEqual(16#250F, ch(B, 0, 0)),
+    ?assertEqual(16#2513, ch(B, 3, 0)),
+    ?assertEqual(16#2517, ch(B, 0, 2)),
+    ?assertEqual(16#251B, ch(B, 3, 2)),
+    ?assertEqual(16#2501, ch(B, 1, 0)),
+    ?assertEqual(16#2503, ch(B, 0, 1)).
+
+border_type_keeps_the_side_subset_logic_test() ->
+    %% Only the glyphs change: a top+left subset draws its corner and two runs in
+    %% the double set, and nothing on the absent sides.
+    B = tuition_block:render(
+        #{borders => [top, left], border_type => double},
+        #rect{x = 0, y = 0, w = 4, h = 3},
+        buf(4, 3)
+    ),
+    ?assertEqual(16#2554, ch(B, 0, 0)),
+    ?assertEqual(16#2550, ch(B, 2, 0)),
+    ?assertEqual(16#2551, ch(B, 0, 1)),
+    ?assertEqual($\s, ch(B, 3, 1)),
+    ?assertEqual($\s, ch(B, 2, 2)).
+
 %%% -- title -----------------------------------------------------------
 
 title_drawn_after_the_left_corner_test() ->
@@ -160,3 +217,65 @@ inner_default_borders_are_all_test() ->
         #rect{x = 3, y = 6, w = 8, h = 8},
         tuition_block:inner(#{}, #rect{x = 2, y = 5, w = 10, h = 10})
     ).
+
+%%% -- padding ---------------------------------------------------------
+
+inner_default_padding_is_zero_test() ->
+    %% An absent padding key matches an explicit 0 — today's borders-only inset.
+    ?assertEqual(
+        tuition_block:inner(#{borders => all}, #rect{x = 0, y = 0, w = 10, h = 10}),
+        tuition_block:inner(#{borders => all, padding => 0}, #rect{x = 0, y = 0, w = 10, h = 10})
+    ).
+
+inner_uniform_padding_insets_all_sides_test() ->
+    %% All borders (1 each) plus a uniform padding of 1 -> 2 cells in on every side.
+    ?assertEqual(
+        #rect{x = 2, y = 2, w = 6, h = 6},
+        tuition_block:inner(#{borders => all, padding => 1}, #rect{x = 0, y = 0, w = 10, h = 10})
+    ).
+
+inner_tuple_padding_is_top_right_bottom_left_test() ->
+    %% No borders, padding {Top, Right, Bottom, Left} = {1, 2, 3, 4}.
+    ?assertEqual(
+        #rect{x = 4, y = 1, w = 20 - 4 - 2, h = 20 - 1 - 3},
+        tuition_block:inner(
+            #{borders => none, padding => {1, 2, 3, 4}}, #rect{x = 0, y = 0, w = 20, h = 20}
+        )
+    ).
+
+inner_padding_adds_to_the_border_inset_test() ->
+    %% Borders (1 each) and padding {1, 2, 3, 4} stack.
+    ?assertEqual(
+        #rect{x = 1 + 4, y = 1 + 1, w = 20 - 2 - 6, h = 20 - 2 - 4},
+        tuition_block:inner(
+            #{borders => all, padding => {1, 2, 3, 4}}, #rect{x = 0, y = 0, w = 20, h = 20}
+        )
+    ).
+
+inner_padding_clamps_to_zero_when_too_big_test() ->
+    %% Padding wider than the area yields an empty inner rect, not a negative one.
+    ?assertEqual(
+        #rect{x = 5, y = 5, w = 0, h = 0},
+        tuition_block:inner(#{borders => none, padding => 5}, #rect{x = 0, y = 0, w = 4, h = 4})
+    ).
+
+inner_negative_padding_floors_at_zero_test() ->
+    %% A negative padding must not out-set the content rect over the border: it
+    %% floors to no padding, matching a plain borders-only inset. Both a uniform
+    %% negative and a tuple with a negative side clamp.
+    Area = #rect{x = 0, y = 0, w = 10, h = 10},
+    Borders = tuition_block:inner(#{borders => all}, Area),
+    ?assertEqual(Borders, tuition_block:inner(#{borders => all, padding => -1}, Area)),
+    ?assertEqual(
+        tuition_block:inner(#{borders => all, padding => {0, 0, 0, 1}}, Area),
+        tuition_block:inner(#{borders => all, padding => {-2, -3, 0, 1}}, Area)
+    ).
+
+padding_leaves_the_border_and_title_in_place_test() ->
+    %% padding only shifts inner/2; the drawn frame and title are unaffected.
+    Cfg = #{borders => all, title => <<"Hi">>, padding => 2},
+    B = tuition_block:render(Cfg, #rect{x = 0, y = 0, w = 12, h = 6}, buf(12, 6)),
+    ?assertEqual(?TOP_LEFT, ch(B, 0, 0)),
+    ?assertEqual(?BOT_RIGHT, ch(B, 11, 5)),
+    ?assertEqual($H, ch(B, 1, 0)),
+    ?assertEqual($i, ch(B, 2, 0)).
