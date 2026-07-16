@@ -39,7 +39,7 @@
 
 -include("tuition_layout.hrl").
 
--export([area/1, split/3]).
+-export([area/1, split/3, rect/4, x/1, y/1, w/1, h/1, to_map/1]).
 
 -type rect() :: #rect{}.
 %% An axis-aligned rectangle of cells; see `include/tuition_layout.hrl'.
@@ -85,6 +85,48 @@ split(horizontal, Constraints, #rect{x = X, y = Y, w = W, h = H}) ->
             solve(Constraints, W)
         ),
     Rects.
+
+%%% -- rect accessors --------------------------------------------------
+
+%% @doc Build a rect from an explicit origin `{X, Y}' and size `W'x`H'.
+%%
+%% The record-free constructor: it produces exactly the {@type rect()} that
+%% {@link area/1} and {@link split/3} return, so a caller that cannot reach into
+%% `#rect{}' (a non-Erlang consumer, or code that would rather not depend on the
+%% header) can still hand a rect to a renderer or split it again. Sizes are cell
+%% counts; the origin is zero-based from the terminal's top-left.
+-spec rect(non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
+    rect().
+rect(X, Y, W, H) ->
+    #rect{x = X, y = Y, w = W, h = H}.
+
+%% @doc The rect's left edge — the zero-based column of its origin.
+-spec x(rect()) -> non_neg_integer().
+x(#rect{x = X}) -> X.
+
+%% @doc The rect's top edge — the zero-based row of its origin.
+-spec y(rect()) -> non_neg_integer().
+y(#rect{y = Y}) -> Y.
+
+%% @doc The rect's width in columns.
+-spec w(rect()) -> non_neg_integer().
+w(#rect{w = W}) -> W.
+
+%% @doc The rect's height in rows.
+-spec h(rect()) -> non_neg_integer().
+h(#rect{h = H}) -> H.
+
+%% @doc The rect as a `#{x, y, w, h}' map — the four fields at once, for a
+%% consumer that would rather match a map than call the four accessors.
+-spec to_map(rect()) ->
+    #{
+        x := non_neg_integer(),
+        y := non_neg_integer(),
+        w := non_neg_integer(),
+        h := non_neg_integer()
+    }.
+to_map(#rect{x = X, y = Y, w = W, h = H}) ->
+    #{x => X, y => Y, w => W, h => H}.
 
 %%% -- solver ----------------------------------------------------------
 

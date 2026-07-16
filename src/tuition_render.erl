@@ -71,6 +71,7 @@
 -include("tuition_layout.hrl").
 
 -export([new/1, size/1, clear/1, cell_at/3, put_cell/4, put_text/4, put_text/5, diff/2]).
+-export([cell/1, cell/2, char/1, fg/1, bg/1, bold/1, underline/1]).
 
 -record(buf, {
     w = 0 :: non_neg_integer(),
@@ -132,6 +133,49 @@ clear(#buf{w = W, h = H}) -> #buf{w = W, h = H}.
 %% half of a two-column glyph. For tests and introspection.
 -spec cell_at(buffer(), non_neg_integer(), non_neg_integer()) -> #cell{} | wide_cont.
 cell_at(Buf, X, Y) -> get_cell(Buf, X, Y).
+
+%%% -- cells -----------------------------------------------------------
+
+%% The power-user custom-render path ({@link put_cell/4} / {@link cell_at/3}) is
+%% the only place a `#cell{}' leaks to consumers — the common {@link put_text/5}
+%% path takes a style map instead. These record-free helpers cover that path so a
+%% caller never has to reach into the `#cell{}' tuple: build one to place, read
+%% the fields of one fetched. The internal `cols' cache (a stored cell's display
+%% width) is not exposed — it is filled in on placement and is not a caller
+%% concern.
+
+%% @doc Build an unstyled `#cell{}' for `Char' — default colours, no bold, no
+%% underline. See {@link cell/2} to style it. `Char' is a single codepoint or a
+%% grapheme-cluster codepoint list; it is sanitised (a control codepoint becomes
+%% a blank) only when the cell is placed by {@link put_cell/4}, not here.
+-spec cell(char() | [char()]) -> #cell{}.
+cell(Char) -> cell(Char, #{}).
+
+%% @doc Build a `#cell{}' for `Char' with the given {@type style()} overlay —
+%% the same style map {@link put_text/5} takes, so a colour/attribute set carries
+%% across both paths. Omitted style keys take the cell defaults.
+-spec cell(char() | [char()], style()) -> #cell{}.
+cell(Char, Style) -> (style_cell(Style))#cell{char = Char}.
+
+%% @doc The cell's glyph: a single codepoint or a grapheme-cluster codepoint list.
+-spec char(#cell{}) -> char() | [char()].
+char(#cell{char = Ch}) -> Ch.
+
+%% @doc The cell's foreground colour.
+-spec fg(#cell{}) -> default | 0..255 | {rgb, byte(), byte(), byte()}.
+fg(#cell{fg = Fg}) -> Fg.
+
+%% @doc The cell's background colour.
+-spec bg(#cell{}) -> default | 0..255 | {rgb, byte(), byte(), byte()}.
+bg(#cell{bg = Bg}) -> Bg.
+
+%% @doc Whether the cell is bold.
+-spec bold(#cell{}) -> boolean().
+bold(#cell{bold = Bold}) -> Bold.
+
+%% @doc Whether the cell is underlined.
+-spec underline(#cell{}) -> boolean().
+underline(#cell{underline = Under}) -> Under.
 
 %%% -- drawing ---------------------------------------------------------
 

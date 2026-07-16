@@ -161,6 +161,39 @@ nested_layout_test() ->
     ?assertEqual(#rect{x = 40, y = 1, w = 40, h = 22}, Right),
     assert_tiles(horizontal, Body, [Left, Right]).
 
+%%% -- rect accessors (issue #45) --------------------------------------
+
+%% rect/4 builds the same record area/1 and split/3 produce.
+rect_constructor_test() ->
+    ?assertEqual(#rect{x = 3, y = 4, w = 20, h = 10}, tuition_layout:rect(3, 4, 20, 10)),
+    ?assertEqual(tuition_layout:area({80, 24}), tuition_layout:rect(0, 0, 80, 24)).
+
+%% The field readers return each component of a rect.
+rect_accessors_test() ->
+    R = tuition_layout:rect(3, 4, 20, 10),
+    ?assertEqual(3, tuition_layout:x(R)),
+    ?assertEqual(4, tuition_layout:y(R)),
+    ?assertEqual(20, tuition_layout:w(R)),
+    ?assertEqual(10, tuition_layout:h(R)).
+
+%% Accessors read a rect straight off split/3 without touching the record.
+rect_accessors_on_split_result_test() ->
+    [_, Body, _] =
+        tuition_layout:split(
+            vertical, [{fixed, 1}, fill, {fixed, 1}], tuition_layout:area({80, 24})
+        ),
+    ?assertEqual(0, tuition_layout:x(Body)),
+    ?assertEqual(1, tuition_layout:y(Body)),
+    ?assertEqual(80, tuition_layout:w(Body)),
+    ?assertEqual(22, tuition_layout:h(Body)).
+
+%% to_map/1 exposes all four fields keyed by name.
+rect_to_map_test() ->
+    ?assertEqual(
+        #{x => 3, y => 4, w => 20, h => 10},
+        tuition_layout:to_map(tuition_layout:rect(3, 4, 20, 10))
+    ).
+
 %%% -- helpers ---------------------------------------------------------
 
 %% Assert the children exactly tile the parent along Direction: gap-free,
