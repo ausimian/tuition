@@ -6,7 +6,8 @@
 %%% them, and owns the shared render/input/resize/quit loop each pane used to
 %%% carry its own copy of. It is deliberately ignorant of what the panes observe —
 %%% the caller names the panes and their tab titles (the standalone Sonde tool
-%%% hands it the observability panes through the {@link //sonde/sonde} façade).
+%%% hands it the observability panes through the
+%%% <a href="https://github.com/ausimian/sonde">Sonde</a> façade).
 %%% Where Phase 0 rendered a single "hello, world" pane (issue #8) and the Phase
 %%% 0.5 demos each owned the whole screen with a duplicated loop, the shell owns
 %%% that loop <em>once</em> and delegates the pane-specific work through the

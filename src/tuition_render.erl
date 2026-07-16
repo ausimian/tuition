@@ -6,12 +6,12 @@
 %%% {@link //tuition/tuition_term:size()} cells, then {@link diff/2} compares it
 %%% against the buffer currently on screen and emits ANSI for *only* the cells
 %%% that changed. The caller keeps the last buffer as the next frame's baseline:
-%%% ```
+%%% <pre>
 %%%   Prev0 = tuition_render:new(Size),                 %% blank screen
 %%%   Next  = build_frame(State),                     %% put_text/put_cell ...
 %%%   ok    = tuition_term:write(Handle, tuition_render:diff(Prev0, Next)),
 %%%   loop(Handle, Next).                             %% Next becomes the baseline
-%%% '''
+%%% </pre>
 %%%
 %%% == Minimal output (§8) ==
 %%% Emission walks the grid in row-major order and, for each changed cell,

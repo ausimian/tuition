@@ -24,11 +24,11 @@
 %%% survive (see {@link tuition_widget}). {@link render/4} takes the state and
 %%% returns it reconciled; navigation and open/close are pure state transitions the
 %%% caller applies to input:
-%%% ```
+%%% <pre>
 %%%   State1 = tuition_tree:next(State0, Nodes),              %% on Down
 %%%   State2 = tuition_tree:toggle_selected(State1, Nodes),   %% on Space
 %%%   {Buf1, State3} = tuition_tree:render(#{nodes => Nodes}, Area, Buf0, State2).
-%%% '''
+%%% </pre>
 %%%
 %%% == Indices address visible rows; the open set addresses ids ==
 %%% Two different keyings meet in this widget, and the split is deliberate.
@@ -48,9 +48,9 @@
 %%%
 %%% == Nodes ==
 %%% A `nodes' config value is a list of roots, each a map:
-%%% ```
+%%% <pre>
 %%%   #{id := term(), label := unicode:chardata(), children => [tree_node()]}
-%%% '''
+%%% </pre>
 %%% `id' is any term, and need only be unique among the nodes the caller wants to
 %%% open independently. `children' defaults to `[]'; a node with no children is a
 %%% leaf and cannot be opened.

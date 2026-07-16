@@ -3,7 +3,7 @@
 %%%
 %%% Where {@link tuition_sparkline} draws one block bar per sample (eight vertical
 %%% levels, one column wide), a chart plots its samples as continuous curves on a
-%%% {@link tuition_braille} grid — 8× the vertical and 2× the horizontal resolution
+%%% {@link tuition_braille} grid — 4× the vertical and 2× the horizontal resolution per cell
 %%% — so a BEAM trend (run-queue length, reductions/s, IO throughput over a
 %%% rolling window) reads as a smooth line rather than a staircase. It is
 %%% ratatui's `Chart' drawn with `Marker::Braille': the dashboard primitive (PRD
@@ -506,7 +506,7 @@ tick_values(auto, {Min, Max}) -> auto_ticks(Min, Max);
 tick_values(List, _Bounds) when is_list(List) -> [V || V <- List, is_number(V)].
 
 %% Draw the y-tick labels, right-aligned against the y-axis at the cell row each
-%% value maps to. Values and bounds are the same {@link chart_bounds/3} the plot
+%% value maps to. Values and bounds are the same {@link plot_window_bounds/2} the plot
 %% uses, so a label sits level with the curve height it denotes and — the gutter
 %% having been sized from these very labels — always fits without truncation. Ties
 %% on a row (a short plot, or a flat series) collapse to one label.

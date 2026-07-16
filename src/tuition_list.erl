@@ -14,10 +14,10 @@
 %%% state and returns it, with the scroll offset adjusted so the selection is in
 %%% view; the caller keeps the returned value for the next frame. Navigation is
 %%% likewise a pure state transition the caller applies to input:
-%%% ```
+%%% <pre>
 %%%   State1 = tuition_list:next(State0, length(Items)),   %% on Down
 %%%   {Buf1, State2} = tuition_list:render(Cfg, Area, Buf0, State1).
-%%% '''
+%%% </pre>
 %%% This is ratatui's `StatefulWidget' split, made explicit because Erlang has no
 %%% `&mut'.
 %%%

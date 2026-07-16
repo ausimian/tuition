@@ -19,7 +19,7 @@
 %%% *input* mode (`edlin' does line editing in software), so turning `edlin' echo
 %%% off with `io:setopts([{echo, false}])' and reading one byte at a time delivers
 %%% each keystroke immediately, without Enter. Two facts (both validated live on
-%%% OTP 28.3, see `docs/design/raw-mode-from-live-shell.md') shape this submode:
+%%% OTP 28.3) shape this submode:
 %%%
 %%% <ul>
 %%%   <li>Reads MUST target `group_leader()' (the current shell group), NOT

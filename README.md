@@ -60,16 +60,22 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | `tuition_table`         | Stateful table widget — columns, header, selection, sort.   |
 | `tuition_tree`          | Stateful tree widget — collapsible hierarchy, indent guides, selection. |
 | `tuition_gauge`         | Gauge widget — horizontal progress bar (sub-cell precision). |
+| `tuition_line_gauge`    | LineGauge widget — a single-row labelled progress line.     |
 | `tuition_sparkline`     | Sparkline widget — compact bar chart of a numeric series.   |
 | `tuition_barchart`      | BarChart widget — labeled categorical bars (vertical/horizontal). |
 | `tuition_chart`         | Chart widget — sub-cell trend curves (braille line/scatter). |
 | `tuition_canvas`        | Canvas widget — freeform braille drawing (line/points/rect/fill_rect/circle) in value coordinates. |
 | `tuition_tabs`          | Tabs widget — a horizontal row of titles with one selected. |
 | `tuition_input_field`   | Stateful text input — editable single-line field, caret + scroll. |
+| `tuition_scrollview`    | Stateful scroll view — pans a window over oversized virtual content. |
+| `tuition_scrollbar`     | Scrollbar widget — a track with a proportional position thumb. |
+| `tuition_clear`         | Clear widget — blank a rect to reset it (the overlay/popup primitive). |
+| `tuition_spinner`       | Spinner widget — an animated in-flight "working…" indicator. |
 | `tuition_pane`          | Pane **behaviour** — the contract the app shell hosts.      |
 | `tuition_shell`         | Application shell — hosts panes under one navigable UI.      |
 | `tuition_loop_term`     | Scripted terminal backend for headless testing (ratatui's `TestBackend` role). |
 | `tuition_demo`      | "Hello, world" reference loop — the smallest end-to-end example. |
+| `tuition_widget_demo`   | Widget-layer demo pane — composes the widget set into one screen. |
 
 ## Benchmarks
 

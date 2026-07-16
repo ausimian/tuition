@@ -10,11 +10,11 @@
 %%%
 %%% == The model ==
 %%% Three layers, smallest first (ratatui's `Span'/`Line'/`Text'):
-%%% ```
+%%% <pre>
 %%%   span() :: {Text :: chardata(), style()}   %% a styled run, one style
 %%%   line() :: [span()]                        %% styled runs, left-to-right
 %%%   text() :: [line()]                         %% lines, top-to-bottom
-%%% '''
+%%% </pre>
 %%% `style()' is the same `#{fg,bg,bold,underline}' overlay {@link tuition_render}
 %%% already understands. A span's style is drawn *over* the widget's base style
 %%% (see {@link put_line/6}), so a span that sets only `#{bold => true}' bolds the
