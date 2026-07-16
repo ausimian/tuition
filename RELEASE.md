@@ -19,6 +19,13 @@
   measure, so a styled line can no more spill onto a neighbour than a plain one.
   Expanding the cell attribute set beyond `bold` / `underline` (adding
   `italic` / `reverse` / `dim` / …) is a natural follow-on, left to its own change.
+- **SSH daemon shell backend** — `tuition_ssh_cli` plugs into OTP
+  `ssh:daemon/2,3` as a custom `ssh_cli` channel callback and starts the normal
+  `tuition_shell` with `tuition_term_ssh` underneath it, so existing pane modules
+  can be hosted over an SSH pty without changing the pane contract. The channel
+  callback handles pty allocation, shell requests, raw input data, window-change
+  resize events, eof/close and exit status, while `tuition_term_ssh` exposes the
+  same `read`/`write`/`size`/`close` backend callbacks as the local terminal.
 - **`tuition_tree`** — a stateful collapsible tree: a navigable hierarchy with
   expand/collapse and selection, so a caller building an application/supervision
   view stops hand-rolling one out of flattened `tuition_list` rows. Takes `nodes`,
