@@ -190,6 +190,13 @@ flush(Cur, Acc) -> [Cur | Acc].
 %% Place one word: on its own it either extends the current line (with a joining
 %% space in `PrevSep's style) when it still fits, or starts a fresh line; a word
 %% wider than the whole line is hard-split into column-sized chunks.
+%%
+%% The word is regrouped on grapheme boundaries first, so a cluster split across a
+%% style boundary (a base fragment and a combining/ZWJ continuation fragment with no
+%% space between them) is one run before it is measured or hard-split: measuring the
+%% healed run gives the true width, and hard-splitting it never tears the cluster
+%% across two rows — which {@link tuition_text:put_line/6}, regrouping only within a
+%% single output line, could not undo.
 -spec place(
     word(),
     non_neg_integer(),
@@ -197,7 +204,8 @@ flush(Cur, Acc) -> [Cur | Acc].
     tuition_text:style(),
     [tuition_text:line()]
 ) -> {tuition_text:line(), [tuition_text:line()]}.
-place(Word, W, Cur, PrevSep, Acc) ->
+place(Word0, W, Cur, PrevSep, Acc) ->
+    Word = tuition_text:regroup(Word0),
     case word_width(Word) =< W of
         true -> place_fitting(Word, W, Cur, PrevSep, Acc);
         false -> place_long(Word, W, Cur, Acc)

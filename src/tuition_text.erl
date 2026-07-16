@@ -54,7 +54,7 @@
 
 -include("tuition_layout.hrl").
 
--export([span/1, span/2, line/1, lines/1, line_width/1, truncate_line/2, put_line/6]).
+-export([span/1, span/2, line/1, lines/1, regroup/1, line_width/1, truncate_line/2, put_line/6]).
 
 -type style() :: tuition_render:style().
 %% A styled run: text plus the style overlaid on it. Its canonical form carries the
@@ -121,25 +121,29 @@ lines(Input) ->
 %%% -- measurement / clipping ------------------------------------------
 
 %% @doc The display width of a whole line in terminal columns: the sum of its
-%% spans' widths, each measured with the sanitise-aware {@link
+%% runs' widths, each measured with the sanitise-aware {@link
 %% tuition_widget:display_width/1} so the total agrees with what {@link put_line/6}
 %% draws (a control byte counts as the one-column blank it becomes, a wide glyph as
-%% two). Widgets use it to align a styled line the way they align a plain one.
+%% two). The line is {@link regroup/1}ed first, so a grapheme cluster split across a
+%% style boundary is measured as the one glyph it renders as rather than double-
+%% counted from each half — keeping the width a widget aligns by in step with what
+%% is drawn. Widgets use it to align a styled line the way they align a plain one.
 -spec line_width(line()) -> non_neg_integer().
 line_width(Line) ->
-    lists:sum([tuition_widget:display_width(Text) || {Text, _Style} <- Line]).
+    lists:sum([tuition_widget:display_width(Text) || {Text, _Style} <- regroup(Line)]).
 
 %% @doc The longest prefix of `Line' whose display width is at most `MaxCols'
-%% columns, as a line — spans clipped span by span with {@link
-%% tuition_widget:truncate/2}, stopping at the first cluster that would overflow
-%% (including a wide glyph with only one column left, dropped whole as {@link
-%% tuition_render} would drop it). The width/truncate helper for styled lines, and
-%% the clip {@link put_line/6} applies before drawing.
+%% columns, as a line — the line is {@link regroup/1}ed (so a cluster split across a
+%% style boundary stays whole and is never torn at the clip), then clipped run by
+%% run with {@link tuition_widget:truncate/2}, stopping at the first cluster that
+%% would overflow (including a wide glyph with only one column left, dropped whole
+%% as {@link tuition_render} would drop it). The width/truncate helper for styled
+%% lines, and the clip {@link put_line/6} applies before drawing.
 -spec truncate_line(line(), integer()) -> line().
 truncate_line(_Line, MaxCols) when MaxCols =< 0 ->
     [];
 truncate_line(Line, MaxCols) ->
-    trunc_spans(Line, MaxCols, []).
+    trunc_spans(regroup(Line), MaxCols, []).
 
 -spec trunc_spans(line(), integer(), [span()]) -> line().
 trunc_spans([], _Rem, Acc) ->
@@ -191,7 +195,9 @@ put_line(Buf, #rect{h = H}, _DCol, DRow, _Line, _Base) when DRow < 0; DRow >= H 
 put_line(Buf, #rect{w = W}, DCol, _DRow, _Line, _Base) when DCol < 0; DCol >= W ->
     Buf;
 put_line(Buf, #rect{x = X, y = Y, w = W}, DCol, DRow, Line, Base) ->
-    Clipped = truncate_line(regroup(Line), W - DCol),
+    %% truncate_line/2 regroups the line, so the clipped runs handed to draw_spans
+    %% are already grapheme-aligned — a split cluster is one run, never a lone mark.
+    Clipped = truncate_line(Line, W - DCol),
     draw_spans(Buf, X + DCol, Y + DRow, Clipped, Base).
 
 %% Draw each span at the running column, advancing by the span's own display width
@@ -207,14 +213,17 @@ draw_spans(Buf, X, Y, [{Text, Style} | Rest], Base) ->
 
 %%% -- grapheme regrouping ---------------------------------------------
 
-%% Re-segment a line's spans on grapheme-cluster boundaries computed across the
+%% @doc Re-segment a line's spans on grapheme-cluster boundaries computed across the
 %% whole line, so a cluster split by a style change is stitched back into a single
-%% run and never drawn as its parts. Each cluster takes the style of the span its
-%% base (first byte) came from — a cell renders one glyph in one style, so the
-%% base's style is the only sensible choice — and runs of equal style are coalesced
-%% back together. A line of zero or one span has no cross-span boundary to heal and
-%% is returned untouched, which keeps the plain (single-span) draw path allocation
-%% free.
+%% run and never drawn — or measured, or wrapped — as its parts. Each cluster takes
+%% the style of the span its base (first byte) came from — a cell renders one glyph
+%% in one style, so the base's style is the only sensible choice — and runs of equal
+%% style are coalesced back together. A line of zero or one span has no cross-span
+%% boundary to heal and is returned untouched, which keeps the plain (single-span)
+%% path allocation free. {@link line_width/1}, {@link truncate_line/2} and {@link
+%% put_line/6} apply it themselves; it is exported so {@link tuition_paragraph} can
+%% heal a word before hard-wrapping it, where a cluster torn across two output rows
+%% could not be stitched back afterwards.
 -spec regroup(line()) -> line().
 regroup([]) ->
     [];

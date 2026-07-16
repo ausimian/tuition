@@ -193,3 +193,20 @@ word_wrap_keeps_separator_span_style_test() ->
     ?assertMatch(#cell{char = $a, bg = 1}, cell(B, 0, 0)),
     ?assertMatch(#cell{char = $\s, bg = 1}, cell(B, 1, 0)),
     ?assertMatch(#cell{char = $b, bg = 1}, cell(B, 2, 0)).
+
+word_wrap_keeps_split_cluster_whole_across_rows_test() ->
+    %% A word whose emoji ZWJ sequence is split across a style boundary, hard-wrapped
+    %% at a width that forces the break just before the emoji, keeps the emoji whole
+    %% on one row (styled by its base span) instead of tearing it across two rows —
+    %% which put_line, regrouping only within a line, could not have healed.
+    %% Woman U+1F469, ZWJ U+200D, laptop U+1F4BB.
+    WholeText = [{<<$a, 16#1F469/utf8, 16#200D/utf8, 16#1F4BB/utf8>>, #{fg => 1}}],
+    SplitText = [
+        {<<$a, 16#1F469/utf8>>, #{fg => 1}}, {<<16#200D/utf8, 16#1F4BB/utf8>>, #{fg => 2}}
+    ],
+    BWhole = render(#{text => WholeText, wrap => word}, 2, 3),
+    BSplit = render(#{text => SplitText, wrap => word}, 2, 3),
+    %% Row 0 is "a"; row 1 is the whole emoji — identical cells for both inputs.
+    ?assertEqual(cell(BWhole, 0, 0), cell(BSplit, 0, 0)),
+    ?assertEqual(cell(BWhole, 0, 1), cell(BSplit, 0, 1)),
+    ?assertMatch(#cell{fg = 1}, cell(BSplit, 0, 1)).

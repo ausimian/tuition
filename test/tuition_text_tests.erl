@@ -121,6 +121,22 @@ line_width_counts_wide_glyph_as_two_test() ->
 line_width_of_empty_line_is_zero_test() ->
     ?assertEqual(0, tuition_text:line_width([])).
 
+line_width_regroups_cluster_split_across_spans_test() ->
+    %% An emoji ZWJ sequence (👩‍💻) split across a style boundary measures as the one
+    %% glyph it renders as, not double-counted from each half — so alignment stays in
+    %% step with drawing. Woman U+1F469, ZWJ U+200D, laptop U+1F4BB.
+    Whole = [{<<16#1F469/utf8, 16#200D/utf8, 16#1F4BB/utf8>>, #{}}],
+    Split = [{<<16#1F469/utf8>>, #{}}, {<<16#200D/utf8, 16#1F4BB/utf8>>, #{fg => 1}}],
+    ?assertEqual(tuition_text:line_width(Whole), tuition_text:line_width(Split)).
+
+regroup_heals_cluster_split_across_spans_test() ->
+    %% The split spans collapse to one run in the base span's style.
+    Split = [{<<16#65/utf8>>, #{}}, {<<16#301/utf8>>, #{fg => 1}}],
+    ?assertEqual([{<<16#65/utf8, 16#301/utf8>>, #{}}], tuition_text:regroup(Split)).
+
+regroup_leaves_single_span_untouched_test() ->
+    ?assertEqual([{<<"hi">>, #{fg => 1}}], tuition_text:regroup([{<<"hi">>, #{fg => 1}}])).
+
 %%% -- truncate_line ---------------------------------------------------
 
 truncate_line_clips_across_spans_test() ->
