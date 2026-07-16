@@ -1,5 +1,33 @@
 ### Added
 
+- **`tuition_tree`** — a stateful collapsible tree: a navigable hierarchy with
+  expand/collapse and selection, so a caller building an application/supervision
+  view stops hand-rolling one out of flattened `tuition_list` rows. Takes `nodes`,
+  a nested list of `#{id, label, children}` maps (`children` optional — a node
+  without them is a leaf), and draws one row per *visible* node: a node's children
+  follow it, indented, only while it is open. Indentation is `indent` columns per
+  level (default `2`), either blank or — with `guides => true` — drawn as `│ ├ └`
+  connectors that continue through an ancestor's column only while its sibling run
+  does; `open_symbol` / `closed_symbol` (default `▾` / `▸`) mark the expandable
+  rows, and a leaf blanks to the same width so labels align down the column. Since
+  a flattened tree *is* a list, the drawing itself is `tuition_list`'s —
+  selection clamping, offset reconciliation, the full-width highlight bar and
+  per-row clipping are reused rather than forked, so `style`, `highlight_style`
+  and `highlight_symbol` behave exactly as they do on a list. The two keyings are
+  deliberately split: selection is a **visible-row index** (what the arrow keys
+  move through, reconciled against the live row count so a collapse cannot strand
+  it), while open/closed is keyed by **node id**, so a caller re-rendering live
+  data every frame keeps the user's tree open across a rebuild instead of
+  collapsing it whenever a node above appears or vanishes; `selected_id/2` bridges
+  the two and is how the node under the cursor is toggled. Closing a node retains
+  the open state *within* it, so reopening restores the subtree as the user left
+  it. State (`selected` / `offset` / `open`) is a `#tree_state{}` threaded by the
+  caller, with `new/0`, `open/2`, `close/2`, `toggle/2`, `is_open/2`, `next/2`,
+  `prev/2`, `select/2`, `selected/1` and `selected_id/2`; `visible/2` exposes the
+  same flatten the render uses (each row carrying `depth`, `expandable`,
+  `expanded` and its parent's visible-row index), so navigation this widget does
+  not impose — jump-to-parent, step-into-child — is built from one source of truth
+  rather than re-derived.
 - **`tuition_canvas`** — a stateless freeform drawing widget over the braille
   sub-cell kernel: the caller names its own value coordinate system
   (`x_bounds` / `y_bounds`, with the y-axis pointing up as in ordinary Cartesian

@@ -55,4 +55,26 @@
     y_offset = 0 :: non_neg_integer()
 }).
 
+-record(tree_state, {
+    %% The selected *visible row* index (0-based), or `none'. It indexes the tree
+    %% flattened to its currently-visible rows — not the node list — so collapsing a
+    %% node above the selection shifts what it points at. {@link tuition_tree} clamps
+    %% it against the live visible-row count on every render and every navigation
+    %% step, so an index stranded by a collapse can never point out of range.
+    selected = none :: none | non_neg_integer(),
+    %% The visible-row index of the first row drawn — the scroll offset. Reconciled
+    %% at render time by {@link tuition_list:reconcile/3}, exactly as for a list: the
+    %% rows of an open tree *are* a list, once flattened.
+    offset = 0 :: non_neg_integer(),
+    %% The ids of the currently-open nodes; a node absent here is closed, so a fresh
+    %% state shows the roots alone. Keyed by id rather than by position so the open
+    %% set survives the tree being rebuilt each frame from fresh data — a re-sampled
+    %% node keeps its open state as long as its id is stable, which is what lets an
+    %% immediate-mode caller re-render live data without collapsing the user's tree
+    %% under them. An id that no longer exists is simply never consulted (it costs one
+    %% map entry, and is retained deliberately: a node that disappears and comes back
+    %% — a restarted supervisor re-registered under the same name — returns open).
+    open = #{} :: #{term() => true}
+}).
+
 -endif.
