@@ -18,15 +18,18 @@
 %%% and it returns the buffer with its cells drawn in — composing with the diff
 %%% renderer exactly as a bare {@link tuition_render:put_text/5} would. {@link
 %%% render/4} dispatches through the behaviour so a caller can render any widget
-%%% uniformly by module. {@link tuition_block}, {@link tuition_paragraph}, {@link
-%%% tuition_gauge}, {@link tuition_sparkline} and {@link tuition_chart} implement this
-%%% callback.
+%%% uniformly by module. The stateless widgets — {@link tuition_block}, {@link
+%%% tuition_paragraph}, {@link tuition_gauge}, {@link tuition_line_gauge}, {@link
+%%% tuition_sparkline}, {@link tuition_barchart}, {@link tuition_chart}, {@link
+%%% tuition_canvas}, {@link tuition_tabs}, {@link tuition_clear}, {@link
+%%% tuition_spinner} and {@link tuition_scrollbar} — implement this callback.
 %%%
 %%% == Stateful widgets ==
 %%% A selection index or scroll offset cannot live inside the widget: the
 %%% immediate-mode renderer rebuilds every frame from scratch and discards the
 %%% buffer, so nothing a stateless `render/3' stored would survive. A stateful
-%%% widget ({@link tuition_list}, and the process table to come) instead takes that
+%%% widget ({@link tuition_list}, {@link tuition_table}, {@link tuition_tree},
+%%% {@link tuition_scrollview} and {@link tuition_input_field}) instead takes that
 %%% state as an explicit argument and returns the updated value:
 %%% ```
 %%%   render(Config, Area, Buf, State) -> {buffer(), State}
