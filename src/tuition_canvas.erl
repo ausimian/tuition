@@ -41,6 +41,9 @@
 %%%   <li>`{rect, X, Y, W, H, Colour}' — the outline (no fill) of the rectangle
 %%%       whose corner is the value point `{X, Y}' and which extends `W' along
 %%%       `+x' and `H' along `+y'.</li>
+%%%   <li>`{fill_rect, X, Y, W, H, Colour}' — the same rectangle as `{rect, ...}'
+%%%       but *solid*: its whole interior is filled, not just the four edges. Use
+%%%       it for a filled region — a highlighted zone, a heatmap-ish block.</li>
 %%%   <li>`{circle, Cx, Cy, R, Colour}' — the outline of the circle centred at the
 %%%       value point `{Cx, Cy}' with radius `R' measured in x-axis value units.
 %%%       It is drawn round on the sub-grid; when the x and y sub-pixel scales
@@ -93,6 +96,7 @@
     {line, number(), number(), number(), number(), tuition_braille:colour()}
     | {points, [{number(), number()}], tuition_braille:colour()}
     | {rect, number(), number(), number(), number(), tuition_braille:colour()}
+    | {fill_rect, number(), number(), number(), number(), tuition_braille:colour()}
     | {circle, number(), number(), number(), tuition_braille:colour()}.
 
 -type canvas() :: #{
@@ -159,6 +163,10 @@ draw({rect, X, Y, W, H, Colour}, Grid, Map) when is_number(W), is_number(H) ->
     {C0, R0} = point(X, Y, Map),
     {C1, R1} = point(X + W, Y + H, Map),
     tuition_braille:rect(Grid, C0, R0, C1, R1, Colour);
+draw({fill_rect, X, Y, W, H, Colour}, Grid, Map) when is_number(W), is_number(H) ->
+    {C0, R0} = point(X, Y, Map),
+    {C1, R1} = point(X + W, Y + H, Map),
+    tuition_braille:fill_rect(Grid, C0, R0, C1, R1, Colour);
 draw({circle, Cx, Cy, R, Colour}, Grid, Map) when is_number(R) ->
     {C, Row} = point(Cx, Cy, Map),
     tuition_braille:circle(Grid, C, Row, radius(R, Map), Colour);

@@ -92,6 +92,19 @@ rect_takes_its_colour_test() ->
     B = render(#{shapes => [{rect, 0, 0, 1, 1, 4}]}, 3, 3),
     ?assertMatch(#cell{fg = 4}, cell(B, 0, 0)).
 
+fill_rect_fills_the_interior_test() ->
+    %% The counterpart to rect's outline: a filled rectangle over the whole unit
+    %% canvas lights every cell, the interior (1,1) that the outline left blank
+    %% included.
+    B = render(#{shapes => [{fill_rect, 0, 0, 1, 1, default}]}, 3, 3),
+    ?assertEqual(16#28FF, ch(B, 1, 1)),
+    ?assertEqual(16#28FF, ch(B, 0, 0)),
+    ?assertEqual(16#28FF, ch(B, 2, 2)).
+
+fill_rect_takes_its_colour_test() ->
+    B = render(#{shapes => [{fill_rect, 0, 0, 1, 1, 4}]}, 3, 3),
+    ?assertMatch(#cell{fg = 4}, cell(B, 1, 1)).
+
 circle_draws_a_ring_test() ->
     %% Centre (2,2) radius 1 over [0,4]x[0,4] on a 2x1 area maps to the sub-pixel
     %% ring (1,2),(3,2),(2,1),(2,3) around centre sub-pixel (2,2), which stays dark.

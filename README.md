@@ -49,7 +49,7 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | `tuition_layout`        | Constraint/split layout — tile an area into cell rects.     |
 | `tuition_render`        | Double-buffered cell grid with diff-based minimal repaint.  |
 | `tuition_width`         | Unicode display width (wcwidth + grapheme clustering).      |
-| `tuition_braille`       | Braille 2×4 sub-cell dot grid (line/rect/circle rasterizers + per-cell colour). |
+| `tuition_braille`       | Braille 2×4 sub-cell dot grid (line/rect/fill_rect/circle rasterizers + per-cell colour). |
 | `tuition_widget`        | Widget **behaviour** (the render-into-a-rect seam) + shared draw helpers. |
 | `tuition_block`         | Block widget — border, title, and the inner content rect.   |
 | `tuition_paragraph`     | Paragraph widget — wrapped, aligned, scrollable text.       |
@@ -59,7 +59,7 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | `tuition_sparkline`     | Sparkline widget — compact bar chart of a numeric series.   |
 | `tuition_barchart`      | BarChart widget — labeled categorical bars (vertical/horizontal). |
 | `tuition_chart`         | Chart widget — sub-cell trend curves (braille line/scatter). |
-| `tuition_canvas`        | Canvas widget — freeform braille drawing (line/points/rect/circle) in value coordinates. |
+| `tuition_canvas`        | Canvas widget — freeform braille drawing (line/points/rect/fill_rect/circle) in value coordinates. |
 | `tuition_tabs`          | Tabs widget — a horizontal row of titles with one selected. |
 | `tuition_input_field`   | Stateful text input — editable single-line field, caret + scroll. |
 | `tuition_pane`          | Pane **behaviour** — the contract the app shell hosts.      |

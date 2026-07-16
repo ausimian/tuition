@@ -186,6 +186,61 @@ rect_colours_the_cells_test() ->
     ?assertMatch(#cell{fg = 5}, cell(B, 0, 0)),
     ?assertMatch(#cell{fg = 5}, cell(B, 1, 0)).
 
+%%% -- filled rectangles -----------------------------------------------
+
+fill_rect_lights_the_whole_interior_test() ->
+    %% The same 3x3 box as the outline test, filled: every sub-pixel it spans is
+    %% lit, the interior (2,2) that rect/6 left dark included.
+    G = tuition_braille:fill_rect(grid(2, 1), 1, 1, 3, 3, default),
+    Expected = lists:sort([
+        {X, Y}
+     || X <- [1, 2, 3], Y <- [1, 2, 3]
+    ]),
+    ?assertEqual(Expected, lit_dots(G, 2, 1)),
+    ?assert(lists:member({2, 2}, lit_dots(G, 2, 1))).
+
+fill_rect_is_corner_order_independent_test() ->
+    %% The rectangle is the bounding box of the two corners — any ordering fills
+    %% the same solid block.
+    A = tuition_braille:fill_rect(grid(2, 1), 1, 1, 3, 3, default),
+    B = tuition_braille:fill_rect(grid(2, 1), 3, 3, 1, 1, default),
+    C = tuition_braille:fill_rect(grid(2, 1), 3, 1, 1, 3, default),
+    ?assertEqual(lit_dots(A, 2, 1), lit_dots(B, 2, 1)),
+    ?assertEqual(lit_dots(A, 2, 1), lit_dots(C, 2, 1)).
+
+fill_rect_of_one_row_is_a_horizontal_span_test() ->
+    %% A zero-height rectangle degenerates to the horizontal run its corners span.
+    G = tuition_braille:fill_rect(grid(2, 1), 0, 0, 3, 0, default),
+    ?assertEqual(lists:sort([{0, 0}, {1, 0}, {2, 0}, {3, 0}]), lit_dots(G, 2, 1)).
+
+fill_rect_with_coincident_corners_is_a_dot_test() ->
+    %% A zero-extent rectangle degenerates to the single sub-pixel of its corner.
+    G = tuition_braille:fill_rect(grid(2, 1), 2, 2, 2, 2, default),
+    ?assertEqual([{2, 2}], lit_dots(G, 2, 1)).
+
+fill_rect_clips_to_the_field_test() ->
+    %% Corners far outside the 4x4 field fill only the on-grid part — here the whole
+    %% field — without walking the rows the runaway corner would otherwise span.
+    G = tuition_braille:fill_rect(grid(2, 1), -100, -100, 100, 100, default),
+    Expected = lists:sort([
+        {X, Y}
+     || X <- [0, 1, 2, 3], Y <- [0, 1, 2, 3]
+    ]),
+    ?assertEqual(Expected, lit_dots(G, 2, 1)).
+
+fill_rect_wholly_off_grid_draws_nothing_test() ->
+    %% A rectangle entirely left of the field has an empty intersection: no fill,
+    %% and no column-0 smear from naively clamping both corners to the edge.
+    G = tuition_braille:fill_rect(grid(2, 1), -5, 0, -2, 3, default),
+    ?assertEqual([], lit_dots(G, 2, 1)).
+
+fill_rect_colours_the_cells_test() ->
+    %% Every lit cell of the fill takes the rectangle's colour.
+    G = tuition_braille:fill_rect(grid(2, 1), 0, 0, 3, 3, 5),
+    B = render(G, 2, 1),
+    ?assertMatch(#cell{fg = 5}, cell(B, 0, 0)),
+    ?assertMatch(#cell{fg = 5}, cell(B, 1, 0)).
+
 %%% -- circles ---------------------------------------------------------
 
 circle_of_zero_radius_is_the_centre_dot_test() ->
