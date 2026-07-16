@@ -77,10 +77,12 @@ toggle_flips_both_ways_test() ->
     ?assert(tuition_tree:is_open(S1, a)),
     ?assertNot(tuition_tree:is_open(tuition_tree:toggle(S1, a), a)).
 
-toggle_none_is_a_no_op_test() ->
-    %% So a caller can pipe selected_id/2 straight in on an empty tree.
-    S = opened([a]),
-    ?assertEqual(S, tuition_tree:toggle(S, none)).
+toggle_treats_none_as_an_ordinary_id_test() ->
+    %% `id() :: term()', so `none' is a legitimate id and must not be read as a
+    %% "nothing selected" sentinel.
+    S = tuition_tree:toggle(tuition_tree:new(), none),
+    ?assert(tuition_tree:is_open(S, none)),
+    ?assertNot(tuition_tree:is_open(tuition_tree:toggle(S, none), none)).
 
 open_ids_are_independent_test() ->
     S = opened([a, a1]),
@@ -217,7 +219,7 @@ selected_id_of_no_selection_is_none_test() ->
 
 selected_id_names_the_node_under_the_cursor_test() ->
     S = tuition_tree:select(opened([a, a1]), 3),
-    ?assertEqual(a1y, tuition_tree:selected_id(S, tree())).
+    ?assertEqual({ok, a1y}, tuition_tree:selected_id(S, tree())).
 
 selected_id_of_a_stale_index_is_none_test() ->
     %% A collapse can strand the index between frames; that must not crash.
@@ -227,14 +229,53 @@ selected_id_of_a_stale_index_is_none_test() ->
 selected_id_tracks_a_collapse_test() ->
     %% Index 2 is a1x while a1 is open, and a2 once it closes — selection addresses
     %% visible rows, which is exactly why a caller must re-read the id each frame.
-    ?assertEqual(a1x, tuition_tree:selected_id(tuition_tree:select(opened([a, a1]), 2), tree())),
-    ?assertEqual(a2, tuition_tree:selected_id(tuition_tree:select(opened([a]), 2), tree())).
+    ?assertEqual(
+        {ok, a1x}, tuition_tree:selected_id(tuition_tree:select(opened([a, a1]), 2), tree())
+    ),
+    ?assertEqual({ok, a2}, tuition_tree:selected_id(tuition_tree:select(opened([a]), 2), tree())).
 
-toggle_of_selected_id_round_trips_test() ->
-    %% The documented idiom: move, read the id, toggle it.
+selected_id_distinguishes_no_selection_from_a_none_id_test() ->
+    %% The reason the result is tagged: an untagged `Id | none' could not tell these
+    %% two apart, and a caller piping it into toggle/2 would never open this node.
+    Nodes = [#{id => none, label => <<"n">>, children => [#{id => c, label => <<"c">>}]}],
+    ?assertEqual(none, tuition_tree:selected_id(tuition_tree:new(), Nodes)),
+    ?assertEqual(
+        {ok, none}, tuition_tree:selected_id(tuition_tree:select(tuition_tree:new(), 0), Nodes)
+    ).
+
+%%% -- toggle_selected -------------------------------------------------
+
+toggle_selected_opens_the_node_under_the_cursor_test() ->
+    %% The documented idiom: move, then toggle what is selected.
     S0 = tuition_tree:next(tuition_tree:new(), tree()),
-    S1 = tuition_tree:toggle(S0, tuition_tree:selected_id(S0, tree())),
+    S1 = tuition_tree:toggle_selected(S0, tree()),
     ?assertEqual([a, a1, a2, b], ids(tuition_tree:visible(S1, tree()))).
+
+toggle_selected_closes_an_open_node_test() ->
+    S0 = tuition_tree:select(opened([a]), 0),
+    ?assertEqual(
+        [a, b], ids(tuition_tree:visible(tuition_tree:toggle_selected(S0, tree()), tree()))
+    ).
+
+toggle_selected_with_no_selection_is_a_no_op_test() ->
+    S = opened([a]),
+    ?assertEqual(S, tuition_tree:toggle_selected(S, tree())).
+
+toggle_selected_on_an_empty_tree_is_a_no_op_test() ->
+    S = tuition_tree:select(tuition_tree:new(), 0),
+    ?assertEqual(S, tuition_tree:toggle_selected(S, [])).
+
+toggle_selected_with_a_stale_index_is_a_no_op_test() ->
+    S = tuition_tree:select(tuition_tree:new(), 99),
+    ?assertEqual(S, tuition_tree:toggle_selected(S, tree())).
+
+toggle_selected_opens_a_node_whose_id_is_none_test() ->
+    %% The regression this API shape exists to prevent: an id of `none' is toggled
+    %% like any other, rather than being mistaken for an empty selection.
+    Nodes = [#{id => none, label => <<"n">>, children => [#{id => c, label => <<"c">>}]}],
+    S = tuition_tree:toggle_selected(tuition_tree:select(tuition_tree:new(), 0), Nodes),
+    ?assert(tuition_tree:is_open(S, none)),
+    ?assertEqual([none, c], ids(tuition_tree:visible(S, Nodes))).
 
 %%% -- render: symbols -------------------------------------------------
 

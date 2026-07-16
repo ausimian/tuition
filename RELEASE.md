@@ -22,8 +22,10 @@
   the two and is how the node under the cursor is toggled. Closing a node retains
   the open state *within* it, so reopening restores the subtree as the user left
   it. State (`selected` / `offset` / `open`) is a `#tree_state{}` threaded by the
-  caller, with `new/0`, `open/2`, `close/2`, `toggle/2`, `is_open/2`, `next/2`,
-  `prev/2`, `select/2`, `selected/1` and `selected_id/2`; `visible/2` exposes the
+  caller, with `new/0`, `open/2`, `close/2`, `toggle/2`, `toggle_selected/2`,
+  `is_open/2`, `next/2`, `prev/2`, `select/2`, `selected/1` and `selected_id/2`
+  (which tags its result `{ok, Id}` so every term stays a legitimate node id, `none`
+  included); `visible/2` exposes the
   same flatten the render uses (each row carrying `depth`, `expandable`,
   `expanded` and its parent's visible-row index), so navigation this widget does
   not impose — jump-to-parent, step-into-child — is built from one source of truth

@@ -25,8 +25,8 @@
 %%% returns it reconciled; navigation and open/close are pure state transitions the
 %%% caller applies to input:
 %%% ```
-%%%   State1 = tuition_tree:next(State0, Nodes),                        %% on Down
-%%%   State2 = tuition_tree:toggle(State1, tuition_tree:selected_id(State1, Nodes)),
+%%%   State1 = tuition_tree:next(State0, Nodes),              %% on Down
+%%%   State2 = tuition_tree:toggle_selected(State1, Nodes),   %% on Space
 %%%   {Buf1, State3} = tuition_tree:render(#{nodes => Nodes}, Area, Buf0, State2).
 %%% '''
 %%%
@@ -39,7 +39,12 @@
 %%% outlive the row order — a caller re-rendering live data rebuilds `nodes' every
 %%% frame, and an open set keyed by position would collapse the user's tree the
 %%% moment a node above it appeared or vanished. {@link selected_id/2} bridges the
-%%% two (index -> id) and is how a caller toggles the node under the cursor.
+%%% two (index -> id), and {@link toggle_selected/2} wraps that bridge into the one
+%%% call a Space/Enter binding actually wants.
+%%%
+%%% Because every term is a legitimate id, no function here spends one as a "nothing
+%%% selected" sentinel: {@link selected_id/2} tags its result `{ok, Id}' so a node
+%%% whose id *is* `none' stays as toggleable as any other.
 %%%
 %%% == Nodes ==
 %%% A `nodes' config value is a list of roots, each a map:
@@ -80,7 +85,7 @@
 -include("tuition_widget.hrl").
 
 -export([new/0, render/4]).
--export([open/2, close/2, toggle/2, is_open/2]).
+-export([open/2, close/2, toggle/2, toggle_selected/2, is_open/2]).
 -export([next/2, prev/2, select/2, selected/1, selected_id/2, visible/2]).
 
 -type id() :: term().
@@ -173,15 +178,27 @@ open(#tree_state{open = Open} = State, Id) ->
 close(#tree_state{open = Open} = State, Id) ->
     State#tree_state{open = maps:remove(Id, Open)}.
 
-%% @doc Flip a node's open state. `none' is a no-op, so a caller can hand
-%% {@link selected_id/2} straight through without checking for an empty tree.
--spec toggle(state(), id() | none) -> state().
-toggle(State, none) ->
-    State;
+%% @doc Flip a node's open state. Every term is a legitimate id, `none' included, so
+%% there is no sentinel here to collide with one — a caller acting on the selection
+%% wants {@link toggle_selected/2}, which handles the empty tree without borrowing an
+%% id for the purpose.
+-spec toggle(state(), id()) -> state().
 toggle(State, Id) ->
     case is_open(State, Id) of
         true -> close(State, Id);
         false -> open(State, Id)
+    end.
+
+%% @doc Flip the open state of the node under the selection — the common binding for
+%% Space/Enter — or return the state untouched when nothing is selected (an empty
+%% tree, or an index stranded by a collapse). This is the ergonomic path {@link
+%% toggle/2} deliberately does not offer: it needs no "no selection" id, so it cannot
+%% mistake a node whose id happens to be `none' for an empty selection.
+-spec toggle_selected(state(), [tree_node()]) -> state().
+toggle_selected(State, Nodes) ->
+    case selected_id(State, Nodes) of
+        {ok, Id} -> toggle(State, Id);
+        none -> State
     end.
 
 %% @doc Whether a node is currently open. Note this reports the *open set*, not
@@ -218,14 +235,19 @@ select(State, Selected) ->
 -spec selected(state()) -> none | non_neg_integer().
 selected(#tree_state{selected = Selected}) -> Selected.
 
-%% @doc The id of the node under the selection, or `none' when nothing is selected
-%% (or the index is stale against a tree that has since shrunk). This is the bridge
-%% from the row index the arrow keys move to the node id {@link toggle/2} needs.
--spec selected_id(state(), [tree_node()]) -> id() | none.
+%% @doc The id of the node under the selection as `{ok, Id}', or `none' when nothing
+%% is selected (an empty tree, or an index stranded by a collapse). This is the bridge
+%% from the row index the arrow keys move to the node id {@link toggle/2} takes.
+%%
+%% The result is tagged because {@type id()} is any term — `none' among them — so a
+%% bare `Id | none' return could not distinguish "nothing is selected" from "the
+%% selected node's id is `none'", and a caller piping it into {@link toggle/2} would
+%% silently fail to toggle that node. {@link toggle_selected/2} wraps the common case.
+-spec selected_id(state(), [tree_node()]) -> {ok, id()} | none.
 selected_id(State, Nodes) ->
     case selected_row(State, Nodes) of
         none -> none;
-        #{id := Id} -> Id
+        #{id := Id} -> {ok, Id}
     end.
 
 %% @doc The currently-visible rows, in draw order — the tree flattened under the
