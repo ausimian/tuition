@@ -1,5 +1,14 @@
 ### Added
 
+- **`tuition_block` border types and padding** — the frame every pane sits in
+  gains two cosmetic controls. `border_type` selects the line/corner glyph set —
+  `light` (default), `rounded` (light runs with rounded corners), `double` or
+  `thick` — with the per-side subset logic unchanged, so a partial border draws
+  the chosen glyphs on just the requested sides. `padding` insets the content
+  rect returned by `inner/2` beyond the border: `0` (default), a uniform `N`, or
+  a `{Top, Right, Bottom, Left}` tuple, clamped so the inner rect never goes
+  negative; the drawn border and title are unaffected. Both default to today's
+  output exactly, so existing blocks render unchanged.
 - **`tuition_canvas`** — a stateless freeform drawing widget over the braille
   sub-cell kernel: the caller names its own value coordinate system
   (`x_bounds` / `y_bounds`, with the y-axis pointing up as in ordinary Cartesian
