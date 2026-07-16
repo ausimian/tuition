@@ -8,7 +8,8 @@
 %%% each iteration. It began as the Phase 0 exit criterion (PRD §13, issue #8);
 %%% after the framework was split out it stays here as the reference demo and the
 %%% only place the caps-probe integration is exercised end-to-end. The full app
-%%% shell ({@link tuition_shell}) and the Sonde observer ({@link //sonde/sonde})
+%%% shell ({@link tuition_shell}) and the Sonde observer
+%%% (<a href="https://github.com/ausimian/sonde">github.com/ausimian/sonde</a>)
 %%% supersede it as the product entry points.
 %%%
 %%% == The render/input loop ==
