@@ -70,3 +70,39 @@ jobs:
 
       - name: Dialyzer
         run: rebar3 dialyzer
+
+  # Mix build cell alongside the rebar3 matrix. Mix builds the same `src/*.erl`
+  # beams and *additionally* compiles the `lib/` Elixir facade, so this proves
+  # the dual build stays green. A single OTP 28 / Elixir 1.19 cell is enough —
+  # the rebar3 matrix above already covers the pure-Erlang OTP spread, and the
+  # Erlang-consumer guarantee is that Mix never enters their chain at all.
+  mix:
+    name: mix (OTP 28 / Elixir 1.19)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          elixir-version: "1.19"
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            deps
+          key: mix-v1-${{ runner.os }}-otp28-elixir1.19-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-v1-${{ runner.os }}-otp28-elixir1.19-
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: ExUnit
+        run: mix test
