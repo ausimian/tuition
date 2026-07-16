@@ -32,7 +32,9 @@
 %%% == Config ==
 %%% A `#{}' map, every key optional:
 %%% <ul>
-%%%   <li>`items'            — the rows, each chardata (default `[]').</li>
+%%%   <li>`items'            — the rows, each a {@type tuition_text:line_input()}:
+%%%       plain chardata as before, or a {@link tuition_text} styled line so a row
+%%%       can carry mixed per-span styles over the row's base (default `[]').</li>
 %%%   <li>`style'            — base style for every row (default: unstyled).</li>
 %%%   <li>`highlight_style'  — style overlaid on the selected row, across its full
 %%%       width (default: unstyled — so set at least a colour to make the
@@ -54,7 +56,7 @@
 -export([new/0, render/4, next/2, prev/2, select/2, selected/1, reconcile/3]).
 
 -type list_cfg() :: #{
-    items => [unicode:chardata()],
+    items => [tuition_text:line_input()],
     style => tuition_render:style(),
     highlight_style => tuition_render:style(),
     highlight_symbol => unicode:chardata()
@@ -178,7 +180,7 @@ follow(Off, _Selected, _Visible) -> Off.
 %% that symbol so the item text lines up.
 -spec draw_items(
     list_cfg(),
-    [unicode:chardata()],
+    [tuition_text:line_input()],
     #rect{},
     state(),
     tuition_render:buffer()
@@ -211,7 +213,7 @@ draw_items(Cfg, Items, #rect{h = H} = Area, #list_state{selected = Selected, off
     #rect{},
     non_neg_integer(),
     boolean(),
-    unicode:chardata(),
+    tuition_text:line_input(),
     tuition_render:style(),
     tuition_render:style(),
     unicode:chardata(),
@@ -230,7 +232,14 @@ draw_row(Buf, Area, Row, Selected, Item, Base, Highlight, Symbol, Gutter) ->
             false -> {Base, Gutter}
         end,
     Buf1 = tuition_widget:fill(Buf, row_rect(Area, Row), Style),
-    tuition_widget:put_line(Buf1, Area, 0, Row, [Prefix, Item], Style).
+    %% Draw the plain gutter prefix in the row style, then the item's styled line
+    %% starting after it (both gutter and symbol share the symbol's width, so the
+    %% item lines up whether or not the row is selected). Each item span overlays
+    %% its own style on the row style, so a plain item is drawn exactly as before.
+    Buf2 = tuition_widget:put_line(Buf1, Area, 0, Row, Prefix, Style),
+    tuition_text:put_line(
+        Buf2, Area, tuition_widget:display_width(Symbol), Row, tuition_text:line(Item), Style
+    ).
 
 %% A one-row sub-rect at `Area'-relative row `Row', spanning the full width — the
 %% region the highlight bar fills.

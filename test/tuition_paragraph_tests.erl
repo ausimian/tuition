@@ -135,3 +135,78 @@ scroll_skips_leading_lines_test() ->
 scroll_past_end_draws_nothing_test() ->
     B = render(#{text => <<"a\nb">>, scroll => 10}, 4, 4),
     ?assertEqual(<<>>, frame(B, 4, 4)).
+
+%%% -- styled spans ----------------------------------------------------
+
+styled_line_draws_each_span_style_test() ->
+    B = render(#{text => [<<"ok ">>, {<<"ERR">>, #{fg => 1}}]}, 10, 1),
+    ?assertMatch(#cell{char = $o, fg = default}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $E, fg = 1}, cell(B, 3, 0)).
+
+styled_span_overlays_paragraph_style_test() ->
+    %% The paragraph style is the base; a span key overrides, others fall through.
+    B = render(#{text => [{<<"x">>, #{fg => 1}}], style => #{bg => 5, fg => 9}}, 4, 1),
+    ?assertMatch(#cell{char = $x, fg = 1, bg = 5}, cell(B, 0, 0)).
+
+styled_text_multi_line_test() ->
+    B = render(#{text => [[{<<"a">>, #{fg => 1}}], [{<<"b">>, #{fg => 2}}]]}, 4, 2),
+    ?assertMatch(#cell{char = $a, fg = 1}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $b, fg = 2}, cell(B, 0, 1)).
+
+styled_newline_inside_span_splits_lines_test() ->
+    B = render(#{text => [{<<"a\nb">>, #{fg => 1}}]}, 4, 2),
+    ?assertMatch(#cell{char = $a, fg = 1}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $b, fg = 1}, cell(B, 0, 1)).
+
+styled_right_alignment_measures_spans_test() ->
+    %% Two spans totalling 2 columns, flush right in width 6 -> columns 4, 5.
+    B = render(#{text => [{<<"h">>, #{fg => 1}}, {<<"i">>, #{fg => 2}}], align => right}, 6, 1),
+    ?assertMatch(#cell{char = $h, fg = 1}, cell(B, 4, 0)),
+    ?assertMatch(#cell{char = $i, fg = 2}, cell(B, 5, 0)).
+
+word_wrap_preserves_span_style_test() ->
+    %% "aaa bbb" wrapped at width 3: each word on its own row, keeping its style.
+    B = render(#{text => [{<<"aaa ">>, #{fg => 1}}, {<<"bbb">>, #{fg => 2}}], wrap => word}, 3, 2),
+    ?assertMatch(#cell{char = $a, fg = 1}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $b, fg = 2}, cell(B, 0, 1)).
+
+word_wrap_across_a_style_boundary_keeps_one_word_test() ->
+    %% "foo" then "bar" with no space between, across a style change, is one word:
+    %% it fits width 6 on one row, each half keeping its own colour.
+    B = render(#{text => [{<<"foo">>, #{fg => 1}}, {<<"bar">>, #{fg => 2}}], wrap => word}, 6, 2),
+    ?assertMatch(#cell{char = $o, fg = 1}, cell(B, 2, 0)),
+    ?assertMatch(#cell{char = $b, fg = 2}, cell(B, 3, 0)),
+    %% One row only — nothing wrapped onto the next.
+    ?assertEqual($\s, ch(B, 0, 1)).
+
+word_wrap_hard_splits_styled_word_keeping_style_test() ->
+    %% A single 5-col word in one style, wrapped at width 3: "abc" / "de", both fg 1.
+    B = render(#{text => [{<<"abcde">>, #{fg => 1}}], wrap => word}, 3, 2),
+    ?assertMatch(#cell{char = $a, fg = 1}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $d, fg = 1}, cell(B, 0, 1)).
+
+word_wrap_keeps_separator_span_style_test() ->
+    %% When two words of one styled span share a wrapped line, the re-inserted
+    %% joining space keeps the span's background rather than reverting to default,
+    %% so a styled/highlighted run has no gap between its words.
+    B = render(#{text => [{<<"a b">>, #{bg => 1}}], wrap => word}, 3, 1),
+    ?assertMatch(#cell{char = $a, bg = 1}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $\s, bg = 1}, cell(B, 1, 0)),
+    ?assertMatch(#cell{char = $b, bg = 1}, cell(B, 2, 0)).
+
+word_wrap_keeps_split_cluster_whole_across_rows_test() ->
+    %% A word whose emoji ZWJ sequence is split across a style boundary, hard-wrapped
+    %% at a width that forces the break just before the emoji, keeps the emoji whole
+    %% on one row (styled by its base span) instead of tearing it across two rows —
+    %% which put_line, regrouping only within a line, could not have healed.
+    %% Woman U+1F469, ZWJ U+200D, laptop U+1F4BB.
+    WholeText = [{<<$a, 16#1F469/utf8, 16#200D/utf8, 16#1F4BB/utf8>>, #{fg => 1}}],
+    SplitText = [
+        {<<$a, 16#1F469/utf8>>, #{fg => 1}}, {<<16#200D/utf8, 16#1F4BB/utf8>>, #{fg => 2}}
+    ],
+    BWhole = render(#{text => WholeText, wrap => word}, 2, 3),
+    BSplit = render(#{text => SplitText, wrap => word}, 2, 3),
+    %% Row 0 is "a"; row 1 is the whole emoji — identical cells for both inputs.
+    ?assertEqual(cell(BWhole, 0, 0), cell(BSplit, 0, 0)),
+    ?assertEqual(cell(BWhole, 0, 1), cell(BSplit, 0, 1)),
+    ?assertMatch(#cell{fg = 1}, cell(BSplit, 0, 1)).
