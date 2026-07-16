@@ -4,8 +4,10 @@
 %%% A terminal cell is the smallest thing the {@link tuition_render} buffer can
 %%% address, but the Unicode braille-patterns block (U+2800–U+28FF) packs a 2×4
 %%% dot matrix into a single cell: eight independently-lit dots, so a grid of
-%%% braille cells resolves **8× the vertical and 2× the horizontal** of the block
-%%% glyphs a {@link tuition_sparkline} draws with. This module is that grid — the
+%%% braille cells resolves **4× the vertical and 2× the horizontal** per terminal
+%%% cell — a two-axis sub-cell field, where the block glyphs a {@link
+%%% tuition_sparkline} draws with vary on the vertical axis only. This module is
+%%% that grid — the
 %%% genuinely reusable kernel {@link tuition_chart} rasterizes trend curves onto,
 %%% and the {@link tuition_canvas} widget draws freeform shapes onto. It is
 %%% ratatui's `Grid'/`BrailleGrid': the pixel buffer under `Canvas' and `Chart'.

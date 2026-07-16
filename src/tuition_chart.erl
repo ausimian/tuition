@@ -3,7 +3,7 @@
 %%%
 %%% Where {@link tuition_sparkline} draws one block bar per sample (eight vertical
 %%% levels, one column wide), a chart plots its samples as continuous curves on a
-%%% {@link tuition_braille} grid — 8× the vertical and 2× the horizontal resolution
+%%% {@link tuition_braille} grid — 4× the vertical and 2× the horizontal resolution per cell
 %%% — so a BEAM trend (run-queue length, reductions/s, IO throughput over a
 %%% rolling window) reads as a smooth line rather than a staircase. It is
 %%% ratatui's `Chart' drawn with `Marker::Braille': the dashboard primitive (PRD
