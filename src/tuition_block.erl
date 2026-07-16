@@ -291,15 +291,19 @@ glyphs(thick) ->
         bot_right => 16#251B
     }.
 
-%% Normalise the padding config to a `{Top, Right, Bottom, Left}' tuple: a uniform
-%% integer expands to all four sides; a tuple passes through as given.
+%% Normalise the padding config to a `{Top, Right, Bottom, Left}' tuple of
+%% non-negative insets: a uniform integer expands to all four sides, a tuple maps
+%% side-for-side, and every side is floored at 0. Flooring matters because a
+%% negative side would flip the inset into an *out*set — moving `inner/2''s rect
+%% back over the border and widening it past the frame — so a stray negative
+%% clamps to "no padding" rather than corrupting the layout.
 -spec padding(padding()) ->
     {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}.
-padding(N) when is_integer(N) -> {N, N, N, N};
-padding({T, R, B, L} = P) when
-    is_integer(T), is_integer(R), is_integer(B), is_integer(L)
-->
-    P.
+padding(N) when is_integer(N) ->
+    Side = max(0, N),
+    {Side, Side, Side, Side};
+padding({T, R, B, L}) when is_integer(T), is_integer(R), is_integer(B), is_integer(L) ->
+    {max(0, T), max(0, R), max(0, B), max(0, L)}.
 
 -spec border_style(block()) -> tuition_render:style().
 border_style(Block) -> maps:get(border_style, Block, #{}).

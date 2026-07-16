@@ -259,6 +259,18 @@ inner_padding_clamps_to_zero_when_too_big_test() ->
         tuition_block:inner(#{borders => none, padding => 5}, #rect{x = 0, y = 0, w = 4, h = 4})
     ).
 
+inner_negative_padding_floors_at_zero_test() ->
+    %% A negative padding must not out-set the content rect over the border: it
+    %% floors to no padding, matching a plain borders-only inset. Both a uniform
+    %% negative and a tuple with a negative side clamp.
+    Area = #rect{x = 0, y = 0, w = 10, h = 10},
+    Borders = tuition_block:inner(#{borders => all}, Area),
+    ?assertEqual(Borders, tuition_block:inner(#{borders => all, padding => -1}, Area)),
+    ?assertEqual(
+        tuition_block:inner(#{borders => all, padding => {0, 0, 0, 1}}, Area),
+        tuition_block:inner(#{borders => all, padding => {-2, -3, 0, 1}}, Area)
+    ).
+
 padding_leaves_the_border_and_title_in_place_test() ->
     %% padding only shifts inner/2; the drawn frame and title are unaffected.
     Cfg = #{borders => all, title => <<"Hi">>, padding => 2},
