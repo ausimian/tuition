@@ -54,6 +54,9 @@
 -export([
     baseline/0, probe/1, probe/2, resolve/2, parse_replies/1, decode_replies/1, apply_colorterm/2
 ]).
+-export([
+    truecolor/1, sync_output/1, bracketed_paste/1, sgr_mouse/1, kitty_keyboard/1, to_map/1
+]).
 
 -type caps() :: #caps{}.
 -export_type([caps/0]).
@@ -155,6 +158,61 @@ apply_colorterm(Value, Caps) when Value =:= "truecolor"; Value =:= "24bit" ->
     Caps#caps{truecolor = true};
 apply_colorterm(_Value, Caps) ->
     Caps.
+
+%%% -- field accessors -------------------------------------------------
+
+%% @doc Whether 24-bit RGB colour is available — the one field style-picking code
+%% actually branches on (fall back to a 256-colour or named SGR when `false').
+%% The record-free reader so a consumer never has to `Record.extract' or `elem/2'
+%% the `#caps{}' returned by {@link probe/1} / {@link resolve/2} / {@link baseline/0}.
+-spec truecolor(caps()) -> boolean().
+truecolor(#caps{truecolor = V}) -> V.
+
+%% @doc Whether synchronized output (DEC `?2026') is available — batch a frame so
+%% a repaint is presented without tearing.
+-spec sync_output(caps()) -> boolean().
+sync_output(#caps{sync_output = V}) -> V.
+
+%% @doc Whether bracketed paste (DEC `?2004') is available — pasted text is
+%% delimited so it is never mistaken for typed keys.
+-spec bracketed_paste(caps()) -> boolean().
+bracketed_paste(#caps{bracketed_paste = V}) -> V.
+
+%% @doc Whether SGR mouse reporting (DEC `?1006') is available — mouse events with
+%% unbounded coordinates.
+-spec sgr_mouse(caps()) -> boolean().
+sgr_mouse(#caps{sgr_mouse = V}) -> V.
+
+%% @doc Whether the kitty keyboard protocol is available — unambiguous
+%% key/modifier reporting.
+-spec kitty_keyboard(caps()) -> boolean().
+kitty_keyboard(#caps{kitty_keyboard = V}) -> V.
+
+%% @doc The capability set as a boolean-valued map keyed by field name — the whole
+%% set at once, for a consumer that would rather match a map than call the five
+%% accessors. Every {@link baseline/0} field is present.
+-spec to_map(caps()) ->
+    #{
+        truecolor := boolean(),
+        sync_output := boolean(),
+        bracketed_paste := boolean(),
+        sgr_mouse := boolean(),
+        kitty_keyboard := boolean()
+    }.
+to_map(#caps{
+    truecolor = TC,
+    sync_output = SO,
+    bracketed_paste = BP,
+    sgr_mouse = SM,
+    kitty_keyboard = KK
+}) ->
+    #{
+        truecolor => TC,
+        sync_output => SO,
+        bracketed_paste => BP,
+        sgr_mouse => SM,
+        kitty_keyboard => KK
+    }.
 
 %%% -- read loop -------------------------------------------------------
 

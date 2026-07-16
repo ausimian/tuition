@@ -282,3 +282,55 @@ resolve_caps_takes_precedence_over_probe_test() ->
         tuition_caps:resolve({tuition_probe_term, Pid}, #{caps => Caps, probe => true})
     ),
     ?assertEqual(<<>>, tuition_probe_term:sent(Pid)).
+
+%%% -- field accessors (issue #45) -------------------------------------
+
+%% Every reader is false on the baseline set.
+accessors_baseline_all_false_test() ->
+    Caps = tuition_caps:baseline(),
+    ?assertNot(tuition_caps:truecolor(Caps)),
+    ?assertNot(tuition_caps:sync_output(Caps)),
+    ?assertNot(tuition_caps:bracketed_paste(Caps)),
+    ?assertNot(tuition_caps:sgr_mouse(Caps)),
+    ?assertNot(tuition_caps:kitty_keyboard(Caps)).
+
+%% Each reader reflects its own field, independent of the others.
+accessors_read_each_field_test() ->
+    Caps = #caps{
+        truecolor = true,
+        sync_output = true,
+        bracketed_paste = true,
+        sgr_mouse = true,
+        kitty_keyboard = true
+    },
+    ?assert(tuition_caps:truecolor(Caps)),
+    ?assert(tuition_caps:sync_output(Caps)),
+    ?assert(tuition_caps:bracketed_paste(Caps)),
+    ?assert(tuition_caps:sgr_mouse(Caps)),
+    ?assert(tuition_caps:kitty_keyboard(Caps)),
+    %% A single set field leaves the rest off.
+    ?assert(tuition_caps:truecolor(#caps{truecolor = true})),
+    ?assertNot(tuition_caps:sync_output(#caps{truecolor = true})).
+
+%% to_map/1 exposes every field keyed by name.
+to_map_test() ->
+    ?assertEqual(
+        #{
+            truecolor => false,
+            sync_output => false,
+            bracketed_paste => false,
+            sgr_mouse => false,
+            kitty_keyboard => false
+        },
+        tuition_caps:to_map(tuition_caps:baseline())
+    ),
+    ?assertEqual(
+        #{
+            truecolor => true,
+            sync_output => false,
+            bracketed_paste => false,
+            sgr_mouse => true,
+            kitty_keyboard => false
+        },
+        tuition_caps:to_map(#caps{truecolor = true, sgr_mouse = true})
+    ).

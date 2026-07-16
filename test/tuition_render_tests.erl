@@ -262,3 +262,38 @@ per_row_cursor_moves_test() ->
 out_of_bounds_row_draws_nothing_test() ->
     B = tuition_render:put_text(tuition_render:new({10, 2}), 0, 5, <<"nope">>),
     ?assertEqual(<<>>, bin(tuition_render:diff(tuition_render:new({10, 2}), B))).
+
+%%% -- cell builder / accessors (issue #45) ----------------------------
+
+%% cell/1 builds an unstyled cell — the glyph set, everything else default.
+cell_unstyled_test() ->
+    C = tuition_render:cell($A),
+    ?assertEqual(#cell{char = $A}, C),
+    ?assertEqual($A, tuition_render:char(C)),
+    ?assertEqual(default, tuition_render:fg(C)),
+    ?assertEqual(default, tuition_render:bg(C)),
+    ?assertNot(tuition_render:bold(C)),
+    ?assertNot(tuition_render:underline(C)).
+
+%% cell/2 applies the same style map put_text/5 takes; omitted keys stay default.
+cell_styled_test() ->
+    C = tuition_render:cell($X, #{fg => {rgb, 1, 2, 3}, bold => true}),
+    ?assertEqual($X, tuition_render:char(C)),
+    ?assertEqual({rgb, 1, 2, 3}, tuition_render:fg(C)),
+    ?assertEqual(default, tuition_render:bg(C)),
+    ?assert(tuition_render:bold(C)),
+    ?assertNot(tuition_render:underline(C)).
+
+%% A built cell round-trips through put_cell/4 and reads back via the accessors.
+cell_round_trips_through_put_cell_test() ->
+    C = tuition_render:cell($Z, #{bg => 42, underline => true}),
+    B = tuition_render:put_cell(tuition_render:new({3, 1}), 0, 0, C),
+    Read = tuition_render:cell_at(B, 0, 0),
+    ?assertEqual($Z, tuition_render:char(Read)),
+    ?assertEqual(42, tuition_render:bg(Read)),
+    ?assert(tuition_render:underline(Read)).
+
+%% The accessors read a grapheme-cluster glyph as-is (a codepoint list).
+cell_cluster_char_test() ->
+    C = tuition_render:cell([$e, 16#0301]),
+    ?assertEqual([$e, 16#0301], tuition_render:char(C)).
