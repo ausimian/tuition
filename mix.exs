@@ -26,19 +26,31 @@ defmodule Tuition.MixProject do
       # resolve; it is named explicitly here as documentation of the contract.
       erlc_paths: ["src"],
       erlc_include_path: "include",
-      erlc_options: [:debug_info, :warnings_as_errors],
+      # `{:d, :TUITION_NO_SSH_BEHAVIOUR}` suppresses the compile-time
+      # `ssh_server_channel` behaviour lint in `tuition_ssh_cli`: Mix does not put
+      # `:ssh` on the Erlang compile path (it is not a runtime dependency — see
+      # `application/0`), so the lint cannot resolve here, whereas rebar3 keeps it.
+      erlc_options: [:debug_info, :warnings_as_errors, {:d, :TUITION_NO_SSH_BEHAVIOUR}],
       deps: deps(),
       description: description(),
       source_url: @source_url
     ]
   end
 
-  # Runtime applications mirror `src/tuition.app.src`. `:ssh` is optional — only
-  # `tuition_ssh_cli`/`tuition_term_ssh` use it, so the local-terminal path must
-  # not drag it in. `:kernel`/`:stdlib` are implicit under Mix but kept explicit
-  # to match the app resource one-for-one.
+  # Runtime applications mirror `src/tuition.app.src` exactly: `[:kernel,
+  # :stdlib]` and nothing more. `:ssh` is deliberately *not* listed — it is used
+  # only by `tuition_ssh_cli`/`tuition_term_ssh`, and a consumer of the SSH
+  # backend starts `:ssh` itself (via `ssh:daemon/2,3`), exactly as under rebar.
+  # Listing it here — even as `{:ssh, :optional}` — puts `:ssh` in the generated
+  # `.app`'s `applications` list, so `Application.ensure_all_started(:tuition)`
+  # would drag `:ssh`/`:crypto`/`:asn1`/`:public_key` into the local-terminal
+  # path (`:optional` only suppresses the error when ssh is *absent*; when it is
+  # present it is still started). The only compile-time need for `:ssh` — the
+  # `ssh_server_channel` behaviour lint — is handled by the `erlc_options` macro
+  # above, not by listing it here. `:kernel`/`:stdlib` are implicit under Mix but
+  # kept explicit to match the app resource one-for-one.
   def application do
-    [extra_applications: [:kernel, :stdlib, {:ssh, :optional}]]
+    [extra_applications: [:kernel, :stdlib]]
   end
 
   defp deps do
