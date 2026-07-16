@@ -42,13 +42,16 @@
 %%% A `#{}' map, every key optional:
 %%% <ul>
 %%%   <li>`columns' — the column specs (default `[]'; an empty table draws
-%%%       nothing). Each is a `#{}' with optional `header' (chardata label,
+%%%       nothing). Each is a `#{}' with optional `header' (a {@type
+%%%       tuition_text:line_input()} label — plain chardata or a styled line —
 %%%       default `<<>>'), `constraint' (a {@type tuition_layout:constraint()},
 %%%       default `fill') and `align' (`left' (default) | `center' | `right',
 %%%       applied to the header and every cell in the column).</li>
-%%%   <li>`rows' — the data rows, each a list of cells (chardata), one per column;
-%%%       a row with fewer cells than columns leaves the trailing columns blank,
-%%%       extra cells are ignored (default `[]'). May instead be a <b>lazy</b>
+%%%   <li>`rows' — the data rows, each a list of cells, one per column; each cell a
+%%%       {@type tuition_text:line_input()} (plain chardata as before, or a {@link
+%%%       tuition_text} styled line carrying mixed per-span styles over the row's
+%%%       base). A row with fewer cells than columns leaves the trailing columns
+%%%       blank, extra cells are ignored (default `[]'). May instead be a <b>lazy</b>
 %%%       `{Items, RowFun}' pair — an item list and a `fun((Item) -> row())' — in
 %%%       which case `RowFun' is applied only to the items in the visible slice,
 %%%       so a large table never pays to build the rows scrolled off screen. The
@@ -85,11 +88,11 @@
 -export([toggle_sort/2, apply_sort/2]).
 
 -type column() :: #{
-    header => unicode:chardata(),
+    header => tuition_text:line_input(),
     constraint => tuition_layout:constraint(),
     align => left | center | right
 }.
--type row() :: [unicode:chardata()].
+-type row() :: [tuition_text:line_input()].
 %% The row data: either the rows themselves, or a lazy `{Items, RowFun}' pair
 %% whose `RowFun' is applied only to the items in the visible slice (see the
 %% module doc). The lazy form is how a large table skips building off-screen rows.
@@ -298,11 +301,12 @@ draw_header(Buf, Geom, #rect{x = X, y = Y, w = W}, 1, Cfg) ->
 %% appended when this is the sorted column. The indicator is subject to the same
 %% per-column truncation as any header, so a column too narrow for both simply
 %% loses the tail.
--spec header_text(column(), non_neg_integer(), sort()) -> unicode:chardata().
+-spec header_text(column(), non_neg_integer(), sort()) -> tuition_text:line().
 header_text(Col, Idx, {Idx, Dir}) ->
-    [maps:get(header, Col, <<>>), <<" ">>, <<(arrow(Dir))/utf8>>];
+    tuition_text:line(maps:get(header, Col, <<>>)) ++
+        [{<<" ">>, #{}}, {<<(arrow(Dir))/utf8>>, #{}}];
 header_text(Col, _Idx, _Sort) ->
-    maps:get(header, Col, <<>>).
+    tuition_text:line(maps:get(header, Col, <<>>)).
 
 -spec arrow(asc | desc) -> char().
 arrow(asc) -> ?ASC;
@@ -391,17 +395,18 @@ draw_row(Buf, Geom, Row, #rect{x = X, w = W}, RowY, Selected, Base, Highlight, S
     non_neg_integer(),
     non_neg_integer(),
     non_neg_integer(),
-    unicode:chardata(),
+    tuition_text:line_input(),
     left | center | right,
     tuition_render:style()
 ) -> tuition_render:buffer().
-draw_cell(Buf, _Cx, Cw, _Y, _Text, _Align, _Style) when Cw =< 0 ->
+draw_cell(Buf, _Cx, Cw, _Y, _Cell, _Align, _Style) when Cw =< 0 ->
     Buf;
-draw_cell(Buf, Cx, Cw, Y, Text, Align, Style) ->
+draw_cell(Buf, Cx, Cw, Y, Cell, Align, Style) ->
     CellRect = #rect{x = Cx, y = Y, w = Cw, h = 1},
-    Width = min(tuition_widget:display_width(Text), Cw),
+    Line = tuition_text:line(Cell),
+    Width = min(tuition_text:line_width(Line), Cw),
     DCol = tuition_widget:align_offset(Align, Cw, Width),
-    tuition_widget:put_line(Buf, CellRect, DCol, 0, Text, Style).
+    tuition_text:put_line(Buf, CellRect, DCol, 0, Line, Style).
 
 %%% -- rows: eager list or lazy {Items, RowFun} -----------------------
 
@@ -429,24 +434,22 @@ align(Col) -> maps:get(align, Col, left).
 
 %% The `Idx'-th cell (0-based) of a row, or `<<>>' when the row is shorter than
 %% the column count.
--spec cell(row(), non_neg_integer()) -> unicode:chardata().
+-spec cell(row(), non_neg_integer()) -> tuition_text:line_input().
 cell(Row, Idx) ->
     case Idx < length(Row) of
         true -> lists:nth(Idx + 1, Row);
         false -> <<>>
     end.
 
-%% A cell as a UTF-8 binary sort key; a missing cell sorts as the empty string.
+%% A cell's plain text as a UTF-8 binary sort key: the concatenation of its span
+%% texts, so a styled cell sorts by the text it shows; a missing cell sorts as the
+%% empty string. Normalising through {@link tuition_text:line/1} tolerates a bad
+%% encoding the same way a draw does, so a malformed cell never crashes a sort.
 -spec cell_bin(row(), non_neg_integer()) -> binary().
-cell_bin(Row, Col) -> to_bin(cell(Row, Col)).
+cell_bin(Row, Col) -> line_text(tuition_text:line(cell(Row, Col))).
 
-%% Best-effort chardata -> UTF-8 binary; a malformed tail contributes whatever
-%% prefix decoded, so a bad encoding in a cell never crashes a sort or a draw
-%% (matching the renderer's own tolerance for untrusted content).
--spec to_bin(unicode:chardata()) -> binary().
-to_bin(Text) ->
-    case unicode:characters_to_binary(Text) of
-        Bin when is_binary(Bin) -> Bin;
-        {error, Good, _Rest} -> Good;
-        {incomplete, Good, _Rest} -> Good
-    end.
+%% The plain text of a normalised line: its span texts joined. Span texts are
+%% already UTF-8 binaries (normalised by {@link tuition_text:line/1}), so this
+%% never re-decodes.
+-spec line_text(tuition_text:line()) -> binary().
+line_text(Line) -> iolist_to_binary([Text || {Text, _Style} <- Line]).

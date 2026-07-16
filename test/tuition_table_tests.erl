@@ -351,3 +351,38 @@ column_spacing_widens_the_gap_between_columns_test() ->
     %% The 3-wide gaps between them stay blank.
     ?assertEqual($\s, ch(B, 2, 1)),
     ?assertEqual($\s, ch(B, 7, 1)).
+
+%%% -- styled cells ----------------------------------------------------
+
+styled_cell_carries_span_style_test() ->
+    %% One filling column; a styled cell renders each span in its own colour.
+    Cfg = #{columns => [#{header => <<>>}], rows => [[[<<"ok ">>, {<<"E">>, #{fg => 1}}]]]},
+    {B, _} = render(Cfg, 10, 2, tuition_table:new()),
+    %% Row 0 is the (blank) header; row 1 the data row.
+    ?assertMatch(#cell{char = $o, fg = default}, cell(B, 0, 1)),
+    ?assertMatch(#cell{char = $E, fg = 1}, cell(B, 3, 1)).
+
+styled_cell_overlays_row_style_test() ->
+    Cfg = #{
+        columns => [#{header => <<>>}],
+        rows => [[[{<<"x">>, #{fg => 1}}]]],
+        row_style => #{bg => 5}
+    },
+    {B, _} = render(Cfg, 6, 2, tuition_table:new()),
+    ?assertMatch(#cell{char = $x, fg = 1, bg = 5}, cell(B, 0, 1)).
+
+styled_header_carries_span_style_test() ->
+    Cfg = #{columns => [#{header => [{<<"H">>, #{fg => 2}}]}]},
+    {B, _} = render(Cfg, 10, 2, tuition_table:new()),
+    ?assertMatch(#cell{char = $H, fg = 2}, cell(B, 0, 0)).
+
+styled_header_keeps_sort_indicator_test() ->
+    Cfg = #{columns => [#{header => [{<<"H">>, #{fg => 2}}]}], sort => {0, asc}},
+    {B, _} = render(Cfg, 10, 2, tuition_table:new()),
+    ?assertMatch(#cell{char = $H, fg = 2}, cell(B, 0, 0)),
+    ?assertEqual(?ASC, ch(B, 2, 0)).
+
+sort_orders_styled_cells_by_text_test() ->
+    Rows = [[[{<<"b">>, #{fg => 1}}]], [[{<<"a">>, #{fg => 2}}]]],
+    Sorted = tuition_table:apply_sort(Rows, {0, asc}),
+    ?assertEqual([[[{<<"a">>, #{fg => 2}}]], [[{<<"b">>, #{fg => 1}}]]], Sorted).

@@ -1,5 +1,24 @@
 ### Added
 
+- **`tuition_text` — a rich styled-text model (`Line` / `Span`)** — a lightweight
+  `line` of styled `span`s (ratatui's `Text` / `Line` / `Span`) so text can carry
+  mixed styles *within* a single line instead of one style per whole widget: colour
+  a status word red, dim a timestamp prefix, bold a matched substring. A `span` is
+  a `{Text, style()}` pair (or `#{text, style}` map), a `line` a list of spans, a
+  `text` a list of lines. `tuition_paragraph` (`text`), `tuition_list` (`items`)
+  and `tuition_table` (`columns` / `rows`) now accept this model anywhere they took
+  plain chardata — backward compatible, since a bare binary/iolist is exactly one
+  default-styled span and multi-line plain text still splits on `\n`. A span's
+  style is layered over the widget's base style, so a span setting only
+  `#{bold => true}` bolds the run while keeping the paragraph/row/cell colour
+  underneath. Paragraph word wrap works across spans, carrying each run's style
+  through the wrap (including a word broken by a hard split or a style boundary);
+  table sort keys read a styled cell's plain text. `tuition_text` also exports the
+  measure/clip/draw helpers (`line_width/1`, `truncate_line/2`, `put_line/6`) that
+  align and clip a styled line the same sanitise-aware way the plain widgets
+  measure, so a styled line can no more spill onto a neighbour than a plain one.
+  Expanding the cell attribute set beyond `bold` / `underline` (adding
+  `italic` / `reverse` / `dim` / …) is a natural follow-on, left to its own change.
 - **`tuition_tree`** — a stateful collapsible tree: a navigable hierarchy with
   expand/collapse and selection, so a caller building an application/supervision
   view stops hand-rolling one out of flattened `tuition_list` rows. Takes `nodes`,

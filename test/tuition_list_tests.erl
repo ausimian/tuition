@@ -164,3 +164,22 @@ no_highlight_symbol_draws_items_at_the_left_test() ->
     ),
     ?assertEqual($a, ch(B, 0, 0)),
     ?assertEqual($b, ch(B, 0, 1)).
+
+%%% -- styled items ----------------------------------------------------
+
+styled_item_carries_span_style_test() ->
+    {B, _} = render(#{items => [[<<"ok ">>, {<<"E">>, #{fg => 1}}]]}, 8, 1, tuition_list:new()),
+    ?assertMatch(#cell{char = $o, fg = default}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $E, fg = 1}, cell(B, 3, 0)).
+
+styled_item_span_overlays_highlight_test() ->
+    %% A selected row's highlight bg is the base; the span's fg overlays it.
+    Cfg = #{items => [[{<<"x">>, #{fg => 1}}]], highlight_style => #{bg => 4}},
+    {B, _} = render(Cfg, 6, 1, tuition_list:select(tuition_list:new(), 0)),
+    ?assertMatch(#cell{char = $x, fg = 1, bg = 4}, cell(B, 0, 0)).
+
+styled_item_draws_after_symbol_gutter_test() ->
+    Cfg = #{items => [[{<<"hi">>, #{fg => 1}}]], highlight_symbol => <<"> ">>},
+    {B, _} = render(Cfg, 8, 1, tuition_list:select(tuition_list:new(), 0)),
+    ?assertEqual($>, ch(B, 0, 0)),
+    ?assertMatch(#cell{char = $h, fg = 1}, cell(B, 2, 0)).
