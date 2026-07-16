@@ -184,3 +184,12 @@ word_wrap_hard_splits_styled_word_keeping_style_test() ->
     B = render(#{text => [{<<"abcde">>, #{fg => 1}}], wrap => word}, 3, 2),
     ?assertMatch(#cell{char = $a, fg = 1}, cell(B, 0, 0)),
     ?assertMatch(#cell{char = $d, fg = 1}, cell(B, 0, 1)).
+
+word_wrap_keeps_separator_span_style_test() ->
+    %% When two words of one styled span share a wrapped line, the re-inserted
+    %% joining space keeps the span's background rather than reverting to default,
+    %% so a styled/highlighted run has no gap between its words.
+    B = render(#{text => [{<<"a b">>, #{bg => 1}}], wrap => word}, 3, 1),
+    ?assertMatch(#cell{char = $a, bg = 1}, cell(B, 0, 0)),
+    ?assertMatch(#cell{char = $\s, bg = 1}, cell(B, 1, 0)),
+    ?assertMatch(#cell{char = $b, bg = 1}, cell(B, 2, 0)).

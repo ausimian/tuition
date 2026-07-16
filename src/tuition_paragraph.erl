@@ -64,6 +64,11 @@
 %% A word being wrapped: styled runs with no spaces, possibly straddling a style
 %% boundary (so it carries more than one span). Its width is the sum of its runs'.
 -type word() :: [tuition_text:span()].
+%% A word paired with the style of the space that separated it from the next word
+%% (the first space of a collapsed run). When two words land on one wrapped line,
+%% the joining space is re-inserted in this style, so a space that is part of a
+%% styled span keeps that span's background rather than reverting to the base.
+-type wsep() :: {word(), tuition_text:style()}.
 
 %%% -- render ----------------------------------------------------------
 
@@ -114,7 +119,7 @@ draw_lines([Line | Rest], #rect{w = W} = Area, Align, Style, Row, Buf) ->
 wrap_line(none, Line, _W) ->
     [Line];
 wrap_line(word, Line, W) ->
-    case wrap_words(tokenize(Line), W, none, []) of
+    case wrap_words(tokenize(Line), W, none, #{}, []) of
         %% A wholly empty (or all-whitespace) source line still occupies one row,
         %% so a blank line in the text renders as a blank row rather than vanishing.
         [] -> [[]];
@@ -124,47 +129,58 @@ wrap_line(word, Line, W) ->
 %% Split a styled line into words at every space, collapsing runs of spaces and
 %% carrying each run's style. A word that straddles a style boundary keeps both
 %% runs: two adjacent spans with no space between them join into one word whose
-%% halves keep their own styles.
--spec tokenize(tuition_text:line()) -> [word()].
+%% halves keep their own styles. Each word is paired with the style of the space
+%% that follows it, so a joining space re-inserted at pack time keeps that style.
+-spec tokenize(tuition_text:line()) -> [wsep()].
 tokenize(Line) ->
     Acc = lists:foldl(fun tokenize_span/2, {[], []}, Line),
-    {WordsRev, _} = close_word(Acc),
+    %% The final word has no following space; its separator style is unused.
+    {WordsRev, _} = close_word(#{}, Acc),
     lists:reverse(WordsRev).
 
 %% Fold one span into {finished-words, current-word} (both reversed): its first
 %% piece continues the current word, and every space after it closes the current
-%% word and starts a fresh one.
--spec tokenize_span(tuition_text:span(), {[word()], word()}) -> {[word()], word()}.
+%% word and starts a fresh one. The closing space belongs to this span, so its
+%% style is recorded as the closed word's separator.
+-spec tokenize_span(tuition_text:span(), {[wsep()], word()}) -> {[wsep()], word()}.
 tokenize_span({Bin, Style}, Acc0) ->
     [First | Rest] = binary:split(Bin, <<" ">>, [global]),
     Acc1 = add_frag(First, Style, Acc0),
     lists:foldl(
-        fun(Piece, Acc) -> add_frag(Piece, Style, close_word(Acc)) end,
+        fun(Piece, Acc) -> add_frag(Piece, Style, close_word(Style, Acc)) end,
         Acc1,
         Rest
     ).
 
 %% Append a non-empty fragment to the current word; an empty piece (from a
 %% collapsed run of spaces or a span edge on a space) adds nothing.
--spec add_frag(binary(), tuition_text:style(), {[word()], word()}) -> {[word()], word()}.
+-spec add_frag(binary(), tuition_text:style(), {[wsep()], word()}) -> {[wsep()], word()}.
 add_frag(<<>>, _Style, Acc) -> Acc;
 add_frag(Bin, Style, {WordsRev, CurRev}) -> {WordsRev, [{Bin, Style} | CurRev]}.
 
-%% Close the current word onto the finished list (a no-op when it is empty, so
-%% collapsed spaces never emit an empty word).
--spec close_word({[word()], word()}) -> {[word()], word()}.
-close_word({WordsRev, []}) -> {WordsRev, []};
-close_word({WordsRev, CurRev}) -> {[lists:reverse(CurRev) | WordsRev], []}.
+%% Close the current word onto the finished list, tagging it with `SepStyle' (the
+%% style of the space that ended it). A no-op when the current word is empty, so a
+%% collapsed run of spaces never emits an empty word and the first space of the run
+%% is the one whose style is kept.
+-spec close_word(tuition_text:style(), {[wsep()], word()}) -> {[wsep()], word()}.
+close_word(_SepStyle, {WordsRev, []}) -> {WordsRev, []};
+close_word(SepStyle, {WordsRev, CurRev}) -> {[{lists:reverse(CurRev), SepStyle} | WordsRev], []}.
 
 %% Greedy word wrap. `Cur' is the line being built (`none' before the first word
-%% lands on it); `Acc' holds the finished lines in reverse.
--spec wrap_words([word()], non_neg_integer(), none | tuition_text:line(), [tuition_text:line()]) ->
-    [tuition_text:line()].
-wrap_words([], _W, Cur, Acc) ->
+%% lands on it), `PrevSep' the separator style of the last word placed on it (the
+%% style a joining space takes), and `Acc' holds the finished lines in reverse.
+-spec wrap_words(
+    [wsep()],
+    non_neg_integer(),
+    none | tuition_text:line(),
+    tuition_text:style(),
+    [tuition_text:line()]
+) -> [tuition_text:line()].
+wrap_words([], _W, Cur, _PrevSep, Acc) ->
     lists:reverse(flush(Cur, Acc));
-wrap_words([Word | Rest], W, Cur, Acc) ->
-    {Cur1, Acc1} = place(Word, W, Cur, Acc),
-    wrap_words(Rest, W, Cur1, Acc1).
+wrap_words([{Word, Sep} | Rest], W, Cur, PrevSep, Acc) ->
+    {Cur1, Acc1} = place(Word, W, Cur, PrevSep, Acc),
+    wrap_words(Rest, W, Cur1, Sep, Acc1).
 
 %% Push the current line (if any) onto the finished list.
 -spec flush(none | tuition_text:line(), [tuition_text:line()]) -> [tuition_text:line()].
@@ -172,23 +188,33 @@ flush(none, Acc) -> Acc;
 flush(Cur, Acc) -> [Cur | Acc].
 
 %% Place one word: on its own it either extends the current line (with a joining
-%% space) when it still fits, or starts a fresh line; a word wider than the whole
-%% line is hard-split into column-sized chunks.
--spec place(word(), non_neg_integer(), none | tuition_text:line(), [tuition_text:line()]) ->
-    {tuition_text:line(), [tuition_text:line()]}.
-place(Word, W, Cur, Acc) ->
+%% space in `PrevSep's style) when it still fits, or starts a fresh line; a word
+%% wider than the whole line is hard-split into column-sized chunks.
+-spec place(
+    word(),
+    non_neg_integer(),
+    none | tuition_text:line(),
+    tuition_text:style(),
+    [tuition_text:line()]
+) -> {tuition_text:line(), [tuition_text:line()]}.
+place(Word, W, Cur, PrevSep, Acc) ->
     case word_width(Word) =< W of
-        true -> place_fitting(Word, W, Cur, Acc);
+        true -> place_fitting(Word, W, Cur, PrevSep, Acc);
         false -> place_long(Word, W, Cur, Acc)
     end.
 
--spec place_fitting(word(), non_neg_integer(), none | tuition_text:line(), [tuition_text:line()]) ->
-    {tuition_text:line(), [tuition_text:line()]}.
-place_fitting(Word, _W, none, Acc) ->
+-spec place_fitting(
+    word(),
+    non_neg_integer(),
+    none | tuition_text:line(),
+    tuition_text:style(),
+    [tuition_text:line()]
+) -> {tuition_text:line(), [tuition_text:line()]}.
+place_fitting(Word, _W, none, _PrevSep, Acc) ->
     {Word, Acc};
-place_fitting(Word, W, Cur, Acc) ->
+place_fitting(Word, W, Cur, PrevSep, Acc) ->
     case tuition_text:line_width(Cur) + 1 + word_width(Word) =< W of
-        true -> {Cur ++ [{<<" ">>, #{}} | Word], Acc};
+        true -> {Cur ++ [{<<" ">>, PrevSep} | Word], Acc};
         false -> {Word, [Cur | Acc]}
     end.
 
