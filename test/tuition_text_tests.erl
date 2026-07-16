@@ -186,3 +186,13 @@ put_line_draws_into_area_at_its_origin_test() ->
     B = tuition_text:put_line(buf(10, 3), rect(3, 1, 4, 1), 0, 0, [{<<"hi">>, #{fg => 1}}], #{}),
     ?assertMatch(#cell{char = $h, fg = 1}, cell(B, 3, 1)),
     ?assertEqual($i, ch(B, 4, 1)).
+
+put_line_stitches_grapheme_split_across_spans_test() ->
+    %% A base char in one span and its combining mark in the next render as the same
+    %% single "é" cell (in the base span's style) as the whole cluster would — the
+    %% accent is not lost as a lone zero-width cluster the renderer drops.
+    Split = put([{<<16#65/utf8>>, #{}}, {<<16#301/utf8>>, #{fg => 1}}], #{}, 0, 4),
+    Whole = put([{<<16#65/utf8, 16#301/utf8>>, #{}}], #{}, 0, 4),
+    ?assertEqual(cell(Whole, 0, 0), cell(Split, 0, 0)),
+    %% The composed cluster is one column wide: nothing spills into the next cell.
+    ?assertEqual($\s, ch(Split, 1, 0)).

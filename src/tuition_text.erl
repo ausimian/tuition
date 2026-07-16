@@ -172,6 +172,12 @@ trunc_spans([{Text, Style} | Rest], Rem, Acc) ->
 %% right edge (`W - DCol') so it can never spill onto a neighbour. Each span is
 %% drawn with its own style overlaid on `Base' (the widget's base style), so a span
 %% key overrides `Base' and the keys it omits fall through to `Base'.
+%%
+%% A grapheme cluster split across a span boundary (a base in one span, a combining
+%% mark or ZWJ continuation in the next — as substring styling that is not
+%% grapheme-aware can produce) is first stitched back whole, taking its base span's
+%% style, so the trailing mark is never handed to {@link tuition_render} as a lone
+%% zero-width cluster (which it would drop) and thereby lost.
 -spec put_line(
     tuition_render:buffer(),
     #rect{},
@@ -185,7 +191,7 @@ put_line(Buf, #rect{h = H}, _DCol, DRow, _Line, _Base) when DRow < 0; DRow >= H 
 put_line(Buf, #rect{w = W}, DCol, _DRow, _Line, _Base) when DCol < 0; DCol >= W ->
     Buf;
 put_line(Buf, #rect{x = X, y = Y, w = W}, DCol, DRow, Line, Base) ->
-    Clipped = truncate_line(Line, W - DCol),
+    Clipped = truncate_line(regroup(Line), W - DCol),
     draw_spans(Buf, X + DCol, Y + DRow, Clipped, Base).
 
 %% Draw each span at the running column, advancing by the span's own display width
@@ -198,6 +204,82 @@ draw_spans(Buf, _X, _Y, [], _Base) ->
 draw_spans(Buf, X, Y, [{Text, Style} | Rest], Base) ->
     Buf1 = tuition_render:put_text(Buf, X, Y, Text, maps:merge(Base, Style)),
     draw_spans(Buf1, X + tuition_widget:display_width(Text), Y, Rest, Base).
+
+%%% -- grapheme regrouping ---------------------------------------------
+
+%% Re-segment a line's spans on grapheme-cluster boundaries computed across the
+%% whole line, so a cluster split by a style change is stitched back into a single
+%% run and never drawn as its parts. Each cluster takes the style of the span its
+%% base (first byte) came from — a cell renders one glyph in one style, so the
+%% base's style is the only sensible choice — and runs of equal style are coalesced
+%% back together. A line of zero or one span has no cross-span boundary to heal and
+%% is returned untouched, which keeps the plain (single-span) draw path allocation
+%% free.
+-spec regroup(line()) -> line().
+regroup([]) ->
+    [];
+regroup([_] = Line) ->
+    Line;
+regroup(Line) ->
+    Segments = [{byte_size(to_bin(Text)), Style} || {Text, Style} <- Line],
+    AllBin = list_to_binary([to_bin(Text) || {Text, _Style} <- Line]),
+    Total = byte_size(AllBin),
+    Clusters = clusters(AllBin, Total, []),
+    coalesce([{Cluster, style_at(Offset, Segments)} || {Cluster, Offset} <- Clusters]).
+
+%% The grapheme clusters of `Bin', each paired with its byte offset into the whole
+%% line (`Total - byte_size(remaining)'), so a later lookup can find the span it
+%% began in. Returned in order.
+-spec clusters(binary(), non_neg_integer(), [{binary(), non_neg_integer()}]) ->
+    [{binary(), non_neg_integer()}].
+clusters(Bin, Total, Acc) ->
+    case string:next_grapheme(Bin) of
+        [GC | Rest] when is_integer(GC); is_list(GC) ->
+            Offset = Total - byte_size(Bin),
+            clusters(as_bin(Rest), Total, [{grapheme_bin(GC), Offset} | Acc]);
+        _ ->
+            lists:reverse(Acc)
+    end.
+
+%% The style of the span covering byte `Offset': walk the `{ByteLen, Style}'
+%% segments, spending the offset against each until it lands inside one. A trailing
+%% offset past every segment (only reachable via a malformed decode) takes the
+%% default style.
+-spec style_at(non_neg_integer(), [{non_neg_integer(), style()}]) -> style().
+style_at(_Offset, []) ->
+    #{};
+style_at(Offset, [{Len, Style} | Rest]) ->
+    case Offset < Len of
+        true -> Style;
+        false -> style_at(Offset - Len, Rest)
+    end.
+
+%% Merge adjacent clusters that share a style into one run, so drawing emits one
+%% put_text per styled run rather than one per cluster.
+-spec coalesce([span()]) -> line().
+coalesce([]) ->
+    [];
+coalesce([{Bin, Style} | Rest]) ->
+    coalesce(Rest, Bin, Style, []).
+
+-spec coalesce([span()], binary(), style(), [span()]) -> line().
+coalesce([], CurBin, CurStyle, Acc) ->
+    lists:reverse([{CurBin, CurStyle} | Acc]);
+coalesce([{Bin, Style} | Rest], CurBin, CurStyle, Acc) when Style =:= CurStyle ->
+    coalesce(Rest, <<CurBin/binary, Bin/binary>>, CurStyle, Acc);
+coalesce([{Bin, Style} | Rest], CurBin, CurStyle, Acc) ->
+    coalesce(Rest, Bin, Style, [{CurBin, CurStyle} | Acc]).
+
+%% A grapheme cluster (a lone codepoint or a codepoint list) as a UTF-8 binary.
+-spec grapheme_bin(char() | [char()]) -> binary().
+grapheme_bin(GC) when is_integer(GC) -> <<GC/utf8>>;
+grapheme_bin(GC) when is_list(GC) -> to_bin(GC).
+
+%% The remainder from string:next_grapheme/1 as a binary (it hands back a binary
+%% tail for binary input, but tolerate a chardata tail too).
+-spec as_bin(unicode:chardata()) -> binary().
+as_bin(Bin) when is_binary(Bin) -> Bin;
+as_bin(Other) -> to_bin(Other).
 
 %%% -- classification --------------------------------------------------
 
