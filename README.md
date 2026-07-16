@@ -55,6 +55,7 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | `tuition_paragraph`     | Paragraph widget — wrapped, aligned, scrollable text.       |
 | `tuition_list`          | Stateful list widget — selection + scroll (`ListState`).    |
 | `tuition_table`         | Stateful table widget — columns, header, selection, sort.   |
+| `tuition_tree`          | Stateful tree widget — collapsible hierarchy, indent guides, selection. |
 | `tuition_gauge`         | Gauge widget — horizontal progress bar (sub-cell precision). |
 | `tuition_sparkline`     | Sparkline widget — compact bar chart of a numeric series.   |
 | `tuition_barchart`      | BarChart widget — labeled categorical bars (vertical/horizontal). |
