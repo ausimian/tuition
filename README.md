@@ -7,10 +7,11 @@ observation or not. It was extracted from the
 [Sonde](https://github.com/ausimian/sonde) BEAM observer, which is its first
 consumer.
 
-This is a **rebar3-native library** with **zero dependencies beyond OTP**
-(`kernel`, `stdlib`, `erts`). It builds natively under both rebar3 and Mix, so
-it can be embedded by Erlang-only and Elixir consumers alike with no Elixir in
-the chain.
+This is a **rebar3-native library** with **zero dependencies beyond OTP**. The
+core UI path uses `kernel`, `stdlib`, and `erts`; optional SSH daemon support
+uses OTP's `ssh` application when a host selects it. It builds natively under
+both rebar3 and Mix, so it can be embedded by Erlang-only and Elixir consumers
+alike with no Elixir in the chain.
 
 ```sh
 rebar3 compile
@@ -43,6 +44,8 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 |-----------------------|-------------------------------------------------------------|
 | `tuition_term`          | Terminal backend **behaviour** (the pluggable seam).        |
 | `tuition_term_local`    | Local raw-mode tty backend (Modes 1–3).                     |
+| `tuition_ssh_cli`       | OTP `ssh:daemon` custom `ssh_cli` channel for shell sessions. |
+| `tuition_term_ssh`      | SSH channel pty backend used by `tuition_ssh_cli` (Mode 4). |
 | `tuition_caps`          | Terminal capability probing (baseline + runtime probe).     |
 | `tuition_input`         | Input parser — raw byte stream to structured key events.    |
 | `tuition_input_driver`  | Bounded read loop driving the parser (lone-ESC timeout).    |
