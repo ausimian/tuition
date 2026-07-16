@@ -10,8 +10,10 @@
 %% The terminal seam dispatches through a {Backend, State} handle. In a
 %% headless test environment there is no controlling tty, so the local backend
 %% cannot enter raw mode and open/2 surfaces a clean error tuple ({error,
-%% enotsup} with no tty, or {error, shell_active} if a shell already owns it)
-%% rather than crashing or leaking a raw terminal.
+%% enotsup} when there is no usable tty / its geometry cannot be read) rather
+%% than crashing or leaking a raw terminal. A live erl/iex shell that owns the
+%% tty is not an error here: it is handled cooperatively through the current
+%% shell group (see tuition_term_local), not refused.
 term_seam_dispatch_test() ->
     ?assertMatch({error, _}, tuition_term:open(tuition_term_local, #{})).
 

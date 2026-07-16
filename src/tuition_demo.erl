@@ -67,7 +67,10 @@
 %% @doc Start the demo against the local node, using the default local
 %% terminal backend. Blocks until the user quits; returns `ok' once the terminal
 %% has been restored, or `{error, Reason}' if the backend could not be opened
-%% (e.g. no controlling tty, or a shell already owns it).
+%% (e.g. no controlling tty, or its geometry could not be read). A live
+%% `erl'/`iex' shell that already owns the tty is <em>not</em> a failure: the
+%% local backend borrows it through the current shell group in cooperative
+%% submode (see {@link tuition_term_local}).
 -spec start() -> ok | {error, term()}.
 start() -> start(#{}).
 
