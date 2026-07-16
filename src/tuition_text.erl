@@ -151,21 +151,27 @@ trunc_spans([], _Rem, Acc) ->
 trunc_spans(_Spans, Rem, Acc) when Rem =< 0 ->
     lists:reverse(Acc);
 trunc_spans([{Text, Style} | Rest], Rem, Acc) ->
-    Clipped = tuition_widget:truncate(Text, Rem),
-    case {Clipped, to_bin(Text)} of
-        %% An empty (or all-control-stripped-to-nothing) span contributes nothing:
-        %% skip it and keep the budget for the runs that follow.
-        {<<>>, <<>>} ->
-            trunc_spans(Rest, Rem, Acc);
-        %% Non-empty source but nothing fit — the next cluster overflows the budget
-        %% (e.g. a wide glyph against one remaining column). Drawing would stop
-        %% here, so the clip does too: no later span can start further right.
-        {<<>>, _} ->
-            lists:reverse(Acc);
-        _ ->
-            Used = tuition_widget:display_width(Clipped),
-            trunc_spans(Rest, Rem - Used, [{Clipped, Style} | Acc])
+    Full = to_bin(Text),
+    Clipped = tuition_widget:truncate(Full, Rem),
+    Used = tuition_widget:display_width(Clipped),
+    case Used < tuition_widget:display_width(Full) of
+        %% The span was clipped inside itself — the budget ran out on a glyph
+        %% (perhaps a wide one) that did not fit, so this is where the line ends.
+        %% Stop here: pulling a later span into the leftover column(s) would skip
+        %% over the dropped glyph, unlike the renderer, which stops a plain run at
+        %% exactly this point. (An empty span has full width 0, so it is never
+        %% "clipped"; it falls through and is skipped with the budget intact.)
+        true ->
+            lists:reverse(add_span(Clipped, Style, Acc));
+        false ->
+            trunc_spans(Rest, Rem - Used, add_span(Clipped, Style, Acc))
     end.
+
+%% Prepend a span to the reversed accumulator, dropping an empty one so a clipped-
+%% to-nothing run leaves no zero-width span behind.
+-spec add_span(binary(), style(), [span()]) -> [span()].
+add_span(<<>>, _Style, Acc) -> Acc;
+add_span(Bin, Style, Acc) -> [{Bin, Style} | Acc].
 
 %%% -- drawing ---------------------------------------------------------
 

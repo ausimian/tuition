@@ -189,6 +189,16 @@ truncate_line_drops_wide_glyph_with_no_room_test() ->
         tuition_text:truncate_line([{<<"a世"/utf8>>, #{fg => 1}}], 2)
     ).
 
+truncate_line_stops_after_clip_not_next_span_test() ->
+    %% A wide glyph that doesn't fit ends the line: the following span must not be
+    %% pulled into the leftover column, which would skip the dropped glyph. In 2
+    %% columns "a世" clips to "a" (世 drops), and "b" is not drawn — matching how the
+    %% plain text "a世b" would clip.
+    ?assertEqual(
+        [{<<"a">>, #{fg => 1}}],
+        tuition_text:truncate_line([{<<"a世"/utf8>>, #{fg => 1}}, {<<"b">>, #{fg => 2}}], 2)
+    ).
+
 %%% -- put_line drawing ------------------------------------------------
 
 put_line_draws_each_span_with_its_style_test() ->
@@ -212,6 +222,13 @@ put_line_clips_at_area_edge_test() ->
     B = put([{<<"abcdef">>, #{}}], #{}, 0, 3),
     ?assertEqual($c, ch(B, 2, 0)),
     ?assertEqual($\s, ch(B, 3, 0)).
+
+put_line_stops_at_unfittable_wide_glyph_across_spans_test() ->
+    %% In a 2-column area, "a世" clips to "a" (世 needs 2 more columns) and the next
+    %% span's "b" is not drawn into the leftover column.
+    B = put([{<<"a世"/utf8>>, #{fg => 1}}, {<<"b">>, #{fg => 2}}], #{}, 0, 2),
+    ?assertMatch(#cell{char = $a, fg = 1}, cell(B, 0, 0)),
+    ?assertEqual($\s, ch(B, 1, 0)).
 
 put_line_offsets_by_dcol_test() ->
     B = put([{<<"ab">>, #{}}], #{}, 2, 6),
