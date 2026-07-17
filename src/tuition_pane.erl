@@ -23,8 +23,17 @@ a timer; the shell supplies the one timed read the loop needs.
 
 ## The callbacks
 
-- `new/0` — the initial state, seeded so the first paint is populated
-  and deterministic before any live sample.
+- `new/0` / `new/1` — the initial state, seeded so the first paint is populated
+  and deterministic before any live sample. Which one the shell calls is chosen
+  by the pane's spec: a plain `{Module, Title}` calls `new/0`, a parameterised
+  `{Module, Title, Arg}` calls `new/1` with the spec's `Arg`. A pane implements
+  whichever it is hosted by, or both. Most panes have exactly one sensible
+  initial state and take `new/0`; `new/1` is for a module hosted more than once
+  with different content, where the difference is data rather than a module of
+  its own — `m:tuition_widget_host` is seeded with the widget it shows this way.
+  The compiler cannot check that at least one is present (a behaviour has no
+  "one of these" form, the same gap as the `setup/0`/`teardown/1` pair below), so
+  a pane implementing neither fails at seed time rather than at compile time.
 - `render/3` — draw the pane into the rect the shell allocated it (the
   screen minus the shell's nav/status chrome), compositing onto the buffer the
   shell passes in. Returns the buffer and the (possibly updated) state. A
@@ -71,7 +80,12 @@ never eats one meant for the shell.
 -export_type([state/0, resource/0]).
 
 %% The initial state — seeded so the first paint is populated and deterministic.
+%% Called for a plain `{Module, Title}' pane spec.
 -callback new() -> state().
+
+%% As `new/0', seeded from the `Arg' of a parameterised `{Module, Title, Arg}'
+%% pane spec — for a module hosted more than once with different content.
+-callback new(Arg :: term()) -> state().
 
 %% Draw the pane into `Area' (the shell's body rect), compositing onto `Buf'.
 %% Returns the buffer and the updated state (a stateful widget's reconciled scroll
@@ -98,4 +112,6 @@ never eats one meant for the shell.
 %% Release the resource {@link setup/0} enabled, given its token. Optional.
 -callback teardown(resource()) -> ok.
 
--optional_callbacks([setup/0, teardown/1]).
+%% `new/0' and `new/1' are both optional only because a pane implements the one
+%% its spec seeds it through (or both); every pane must implement at least one.
+-optional_callbacks([new/0, new/1, setup/0, teardown/1]).

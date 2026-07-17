@@ -37,6 +37,70 @@ new_clamps_an_out_of_range_focus_test() ->
     %% A focus past the end clamps onto the last pane rather than crashing.
     ?assertEqual(1, tuition_shell:active(tuition_shell:new(?PANES, 9))).
 
+%%% -- parameterised pane specs ----------------------------------------
+%%%
+%%% A `{Module, Title, Arg}' spec seeds its pane through `new/1' instead of `new/0',
+%%% so one pane module can be hosted more than once with different content (the
+%%% generic tuition_widget_host is the motivating case). tuition_shell_arg_pane takes
+%%% its body tag from the arg, so the tag in the painted frame shows the arg arrived.
+
+arg_panes() ->
+    [
+        {tuition_shell_arg_pane, <<"First">>, <<"one">>},
+        {tuition_shell_arg_pane, <<"Second">>, <<"two">>}
+    ].
+
+a_parameterised_spec_seeds_the_pane_through_new_1_test() ->
+    B = frame(tuition_shell:new(arg_panes())),
+    ?assertMatch({_, _}, binary:match(B, <<"one body">>)).
+
+the_same_module_can_be_hosted_twice_with_different_args_test() ->
+    %% The point of the parameterised spec: two panes, one module, distinct content.
+    S0 = tuition_shell:new(arg_panes()),
+    ?assertMatch({_, _}, binary:match(frame(S0), <<"one body">>)),
+    {ok, S1} = tuition_shell:apply_events([tab()], S0),
+    ?assertMatch({_, _}, binary:match(frame(S1), <<"two body">>)).
+
+parameterised_and_plain_specs_mix_in_one_shell_test() ->
+    Mixed = [{tuition_shell_pane_a, <<"Alpha">>}, {tuition_shell_arg_pane, <<"Arg">>, <<"two">>}],
+    S0 = tuition_shell:new(Mixed),
+    ?assertMatch({_, _}, binary:match(frame(S0), <<"alpha body">>)),
+    {ok, S1} = tuition_shell:apply_events([tab()], S0),
+    ?assertMatch({_, _}, binary:match(frame(S1), <<"two body">>)).
+
+active_by_module_resolves_a_parameterised_spec_test() ->
+    %% `active => Module' scans the spec list, so it has to read a 3-tuple's module.
+    %% Resolved in start/2, so this one goes through the loop.
+    Mixed = [{tuition_shell_pane_a, <<"Alpha">>}, {tuition_shell_arg_pane, <<"Arg">>, <<"two">>}],
+    Opts = #{
+        backend => tuition_loop_term,
+        sink => self(),
+        size => ?BIG,
+        script => [{ok, <<"q">>}],
+        active => tuition_shell_arg_pane
+    },
+    ?assertEqual(ok, tuition_shell:start(Mixed, Opts)),
+    {Frames, Closed} = drain(<<>>, false),
+    ?assert(Closed),
+    ?assertMatch({_, _}, binary:match(Frames, <<"two body">>)),
+    ?assertEqual(nomatch, binary:match(Frames, <<"alpha body">>)).
+
+a_parameterised_spec_still_gets_its_setup_teardown_test() ->
+    %% Resource lifecycle walks the same spec list, so it has to read 3-tuples too.
+    reset_lifecycle(),
+    Panes = [{tuition_shell_order_pane, <<"A">>, ignored}],
+    ?assertEqual(ok, tuition_shell:start(Panes, lifecycle_opts())),
+    drain(<<>>, false),
+    ?assertEqual([{setup, 1}, {teardown, 1}], lifecycle_log()).
+
+a_sidebar_can_be_parameterised_too_test() ->
+    %% Otherwise a pane implementing only `new/1' could be tabbed but never pinned.
+    Sidebar = #{
+        module => tuition_shell_arg_pane, title => <<"Side">>, width => 20, arg => <<"side">>
+    },
+    B = frame(tuition_shell:new(?PANES, 0, #{sidebar => Sidebar})),
+    ?assertMatch({_, _}, binary:match(B, <<"side body">>)).
+
 %%% -- pane switching --------------------------------------------------
 
 tab_switches_to_the_next_pane_test() ->

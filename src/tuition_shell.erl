@@ -120,10 +120,21 @@ routing and resize can be asserted directly over the scripted backend.
     resample = false :: boolean()
 }).
 
--type pane_spec() :: {module(), binary()}.
-%% A sidebar spec: the pane module, its nav-tab title, and the fixed column width it
-%% is pinned to (clamped to half the body at layout time).
--type sidebar_spec() :: #{module := module(), title := binary(), width => non_neg_integer()}.
+%% A hosted pane: its module and nav-tab title, optionally with the `Arg' to seed it
+%% through `c:tuition_pane:new/1' rather than `c:tuition_pane:new/0'. The
+%% parameterised form is for a module hosted more than once with different content
+%% (see {@link tuition_widget_host}).
+-type pane_spec() :: {module(), binary()} | {module(), binary(), term()}.
+%% A sidebar spec: the pane module, its nav-tab title, the fixed column width it is
+%% pinned to (clamped to half the body at layout time), and optionally the `arg' to
+%% seed it through `c:tuition_pane:new/1' — the sidebar's equivalent of a
+%% parameterised {@link pane_spec/0}.
+-type sidebar_spec() :: #{
+    module := module(),
+    title := binary(),
+    width => non_neg_integer(),
+    arg => term()
+}.
 -type state() :: #shell{}.
 %% An acquired pane resource, paired with its module for teardown: `none' for a
 %% pane with no {@link tuition_pane:setup/0}, else the token that `setup/0' returned.
@@ -133,9 +144,11 @@ routing and resize can be asserted directly over the scripted backend.
 %%% -- entry point -----------------------------------------------------
 
 -doc """
-Run the shell over `PaneSpecs`, a non-empty list of `{Module, Title}` panes,
-focused on the first. Blocks until the user quits. Returns `ok` once the
-terminal is restored, or `{error, Reason}` if the backend could not be opened.
+Run the shell over `PaneSpecs`, a non-empty list of `{Module, Title}` panes (or
+`{Module, Title, Arg}`, to seed a pane through `c:tuition_pane:new/1` — see
+`t:pane_spec/0`), focused on the first. Blocks until the user quits. Returns `ok`
+once the terminal is restored, or `{error, Reason}` if the backend could not be
+opened.
 """.
 -spec start([pane_spec()]) -> ok | {error, term()}.
 start(PaneSpecs) when is_list(PaneSpecs) -> start(PaneSpecs, #{}).
@@ -189,6 +202,29 @@ all_specs(PaneSpecs, Opts) ->
         none -> PaneSpecs;
         #{module := Module, title := Title} -> PaneSpecs ++ [{Module, Title}]
     end.
+
+%%% -- pane specs ------------------------------------------------------
+%%%
+%%% A spec is `{Module, Title}' or `{Module, Title, Arg}'; everything that walks the
+%%% spec list reads it through these three, so the two shapes are destructured in one
+%%% place rather than at every use site.
+
+%% The module a spec names, whichever shape it is.
+-spec spec_module(pane_spec()) -> module().
+spec_module({Module, _Title}) -> Module;
+spec_module({Module, _Title, _Arg}) -> Module.
+
+%% The nav-tab title a spec carries.
+-spec spec_title(pane_spec()) -> binary().
+spec_title({_Module, Title}) -> Title;
+spec_title({_Module, Title, _Arg}) -> Title.
+
+%% Seed a spec's pane state: a plain spec through `new/0', a parameterised one
+%% through `new/1' with its arg. Which callback runs is the spec's shape alone, so a
+%% pane is never handed an arg it did not opt into by being specced with one.
+-spec seed(pane_spec()) -> tuition_pane:state().
+seed({Module, _Title}) -> Module:new();
+seed({Module, _Title, Arg}) -> Module:new(Arg).
 
 %%% -- render/input loop -----------------------------------------------
 
@@ -615,12 +651,16 @@ As `new/2`, reading the chrome extras from `Opts`. `sidebar` pins an
 always-visible `t:sidebar_spec/0` pane to a left column and adds it to the Tab
 ring. `status_right` supplies a function whose result is right-aligned on the
 status line. Each pane, the sidebar included, is seeded with its module's
-`c:tuition_pane:new/0`. Exported so pane switching, routing and the sidebar
-layout can be driven purely, without a terminal.
+`c:tuition_pane:new/0` — or `c:tuition_pane:new/1`, for a spec carrying an arg.
+Exported so pane switching, routing and the sidebar layout can be driven purely,
+without a terminal.
 """.
 -spec new([pane_spec()], non_neg_integer(), map()) -> state().
 new(PaneSpecs, Active, Opts) ->
-    Panes = [#pane{module = M, title = T, state = M:new()} || {M, T} <- PaneSpecs],
+    Panes = [
+        #pane{module = spec_module(S), title = spec_title(S), state = seed(S)}
+     || S <- PaneSpecs
+    ],
     {Sidebar, Width} = build_sidebar(maps:get(sidebar, Opts, none)),
     #shell{
         panes = Panes,
@@ -644,7 +684,14 @@ initial_focus(#pane{}) -> sidebar.
 build_sidebar(none) ->
     {none, 0};
 build_sidebar(#{module := Module, title := Title} = Spec) ->
-    Pane = #pane{module = Module, title = Title, state = Module:new()},
+    %% Reuse the tabbed panes' seeding by casting the sidebar spec to the matching
+    %% pane_spec() shape, so `arg' seeds through `new/1' exactly as a 3-tuple does.
+    PaneSpec =
+        case maps:find(arg, Spec) of
+            {ok, Arg} -> {Module, Title, Arg};
+            error -> {Module, Title}
+        end,
+    Pane = #pane{module = Module, title = Title, state = seed(PaneSpec)},
     {Pane, maps:get(width, Spec, ?DEFAULT_SIDEBAR_WIDTH)}.
 
 -doc """
@@ -743,9 +790,13 @@ resolve_active(Module, PaneSpecs) when is_atom(Module) ->
     module_index(Module, PaneSpecs, 0).
 
 -spec module_index(module(), [pane_spec()], non_neg_integer()) -> non_neg_integer().
-module_index(Module, [{Module, _Title} | _Rest], Index) -> Index;
-module_index(Module, [_Other | Rest], Index) -> module_index(Module, Rest, Index + 1);
-module_index(_Module, [], _Index) -> 0.
+module_index(_Module, [], _Index) ->
+    0;
+module_index(Module, [Spec | Rest], Index) ->
+    case spec_module(Spec) =:= Module of
+        true -> Index;
+        false -> module_index(Module, Rest, Index + 1)
+    end.
 
 %% Enable each pane's optional {@link tuition_pane:setup/0} resource left to right,
 %% pairing each with its module for teardown; a pane without a `setup/0' contributes
@@ -762,7 +813,8 @@ setup_panes(PaneSpecs) ->
 -spec setup_panes([pane_spec()], [pane_resource()]) -> [pane_resource()].
 setup_panes([], Acquired) ->
     lists:reverse(Acquired);
-setup_panes([{Module, _Title} | Rest], Acquired) ->
+setup_panes([Spec | Rest], Acquired) ->
+    Module = spec_module(Spec),
     Resource =
         try
             setup_pane(Module)
