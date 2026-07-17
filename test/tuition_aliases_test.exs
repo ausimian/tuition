@@ -9,13 +9,14 @@ defmodule Tuition.AliasesTest do
   # module to be classified as either aliased (public) or internal.
 
   # Deliberately unaliased: terminal backends, input plumbing, the ssh channel,
-  # and the demos — internal seams a consumer never calls directly. Adding a
-  # public module means aliasing it in `Tuition`; adding an internal one means
-  # listing it here. Either way the choice is forced to be explicit.
+  # and the demos and showcase hosts — internal seams a consumer never calls
+  # directly. Adding a public module means aliasing it in `Tuition`; adding an
+  # internal one means listing it here. Either way the choice is forced to be
+  # explicit.
   @internal ~w(
     tuition_term tuition_term_local tuition_term_ssh tuition_loop_term
     tuition_input tuition_input_driver tuition_ssh_cli
-    tuition_demo tuition_widget_demo
+    tuition_demo tuition_widget_demo tuition_widget_host
   )a
 
   defp erlang_modules do

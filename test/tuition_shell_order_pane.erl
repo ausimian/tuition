@@ -9,9 +9,13 @@
 -module(tuition_shell_order_pane).
 -behaviour(tuition_pane).
 
--export([new/0, render/3, apply_events/2, sample/1, setup/0, teardown/1]).
+-export([new/0, new/1, render/3, apply_events/2, sample/1, setup/0, teardown/1]).
 
+%% Seeded either way — a plain `{Module, Title}' spec calls `new/0', a
+%% parameterised `{Module, Title, Arg}' one calls `new/1' — so the lifecycle tests
+%% can assert setup/teardown runs for both spec shapes through the one stub.
 new() -> undefined.
+new(_Arg) -> undefined.
 render(_Area, Buf, State) -> {Buf, State}.
 apply_events(_Events, State) -> {ok, State}.
 sample(State) -> State.
