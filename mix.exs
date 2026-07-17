@@ -43,10 +43,17 @@ defmodule Tuition.MixProject do
   # render one shared body of prose. `main: "readme"` lands the README as the
   # docs home page; the Erlang modules in `src/` and the Elixir facade in `lib/`
   # both appear, documented from their doc chunks.
+  # The `notebooks/*.livemd` extras are the runnable per-widget showcases (issue
+  # #56): ExDoc renders each as a docs page, copies the raw `.livemd` next to it,
+  # and adds the Run-in-Livebook badge itself — pointed at that copy, resolved from
+  # the page's own URL, so a notebook carries no badge markup of its own. Kept in
+  # step with the `ex_doc` stanza in `rebar.config` — the two build systems each
+  # carry their own copy of this list.
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "LICENSE"],
+      extras: ["README.md", "notebooks/list.livemd", "LICENSE"],
+      groups_for_extras: ["Widget showcases": ~r{notebooks/}],
       source_url: @source_url
     ]
   end

@@ -1,0 +1,127 @@
+<!-- livebook:{"persist_outputs":true} -->
+
+# tuition_list
+
+```elixir
+# One dependency brings in both: `kino_tuition` depends on `tuition`, so this
+# pulls the widget shown and the bridge showing it. A bare `github:` dep is
+# resolved to the default branch once and then cached — a re-run reuses the
+# locked commit, so to pick up newer commits install without the cache
+# (`Mix.install(..., force: true)`, or clear ~/.cache/mix / the Livebook cache).
+Mix.install([
+  {:kino_tuition, github: "ausimian/kino_tuition"}
+])
+```
+
+## What this is
+
+A runnable showcase of `:tuition_list` — a scrollable, selectable column of
+items. The cell at the bottom opens a real terminal in your browser (xterm.js)
+with a real `tuition` session behind it, so the colour, the selection highlight
+and the scrolling are the widget's own, not a picture of them.
+
+`:tuition_widget_host` is the pane that shows one widget on its own. You hand it
+a spec — which widget, its config, its initial state, and how to fold input —
+and `:tuition_shell` hosts it. A single-element pane list draws no nav bar, so
+the list is all you see.
+
+## The items
+
+Enough of them that the list has to scroll in the terminal below, so you can
+watch the view follow the selection.
+
+```elixir
+items = for n <- 1..40, do: "item #{String.pad_leading("#{n}", 2, "0")}"
+length(items)
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+40
+```
+
+## The spec
+
+Three parts worth reading separately.
+
+**`config`** is the widget's content and styling. A `highlight_style` is what
+makes the selection visible at all — the default is unstyled, so a list without
+one draws a selection you cannot see.
+
+**`state`** holds the selection index and scroll offset. It lives here, in the
+caller's hands, because the renderer is immediate-mode and throws every frame
+away — anything the widget tried to keep between frames would not survive. Its
+presence in the spec is also what tells the host this is a *stateful* widget, to
+be rendered through `:tuition_list.render/4`.
+
+**`input`** folds a key into the model. The host does not guess this: a widget's
+key bindings are a property of the showcase, not of the widget, and the stateful
+widgets do not share one input API. `next/2` and `prev/2` take the item count so
+the list can clamp at the ends, and they are pure — navigation is a state
+transition the caller applies, exactly like the render.
+
+```elixir
+spec = %{
+  widget: :tuition_list,
+  config: %{
+    items: items,
+    highlight_style: %{fg: 0, bg: 6, bold: true},
+    highlight_symbol: "> "
+  },
+  state: :tuition_list.select(:tuition_list.new(), 0),
+  input: fn
+    {:key, :down, _mods}, %{state: s} = model ->
+      %{model | state: :tuition_list.next(s, length(items))}
+
+    {:key, {:char, ?j}, _mods}, %{state: s} = model ->
+      %{model | state: :tuition_list.next(s, length(items))}
+
+    {:key, :up, _mods}, %{state: s} = model ->
+      %{model | state: :tuition_list.prev(s, length(items))}
+
+    {:key, {:char, ?k}, _mods}, %{state: s} = model ->
+      %{model | state: :tuition_list.prev(s, length(items))}
+
+    {:key, :home, _mods}, %{state: s} = model ->
+      %{model | state: :tuition_list.select(s, 0)}
+
+    {:key, :end, _mods}, %{state: s} = model ->
+      %{model | state: :tuition_list.select(s, length(items) - 1)}
+
+    _event, model ->
+      model
+  end
+}
+
+:ok
+```
+
+<!-- livebook:{"output":true} -->
+
+```
+:ok
+```
+
+Note what the fold does *not* do: it never touches the scroll offset. The
+selection is all you move; `render/4` reconciles the offset each frame to keep
+that selection on screen, and returns the adjusted state for the host to keep.
+Scrolling is a consequence, not something the showcase drives.
+
+## Run it
+
+Up/Down (or `j`/`k`) move the selection, Home/End jump to the ends. Watch the
+view start scrolling once the selection reaches the bottom row, and the `> `
+prefix keep the unselected rows aligned.
+
+`q` is not bound below — this spec's fold ignores it, since the fold owns every
+key the shell does not. **Ctrl-C** quits: `:tuition_shell` claims it globally
+before a pane ever sees it, so a showcase always has a way out.
+
+```elixir
+KinoTuition.new(
+  fn opts -> :tuition_shell.start([{:tuition_widget_host, "List", spec}], opts) end,
+  cols: 40,
+  rows: 14
+)
+```
