@@ -31,25 +31,41 @@ defmodule Tuition.Records do
   `include/*.hrl` resolves — both in-repo and when tuition is compiled as a
   dependency (Mix compiles each dep from within its own directory). Consumers
   never re-extract; they import the macros defined here.
+
+  Each header is also declared an `@external_resource`, so Mix recompiles this
+  module whenever a record's `.hrl` changes. Without that, an incremental build
+  would recompile the Erlang modules that `-include` the header but leave these
+  macros on stale field positions/defaults until a clean build — the very drift
+  the extraction is meant to prevent.
   """
 
   require Record
+
+  # Single-sourced header paths, shared by `Record.extract/2` below and the
+  # `@external_resource` declarations that tie this module's recompilation to
+  # them (the same pattern mix.exs uses for `src/tuition.app.src`).
+  @rect_hrl "include/tuition_layout.hrl"
+  @caps_hrl "include/tuition_caps.hrl"
+  @cell_hrl "include/tuition_term.hrl"
+  @external_resource @rect_hrl
+  @external_resource @caps_hrl
+  @external_resource @cell_hrl
 
   @doc """
   Record macros for the geometry rectangle `#rect{}` (`include/tuition_layout.hrl`):
   a zero-based `{x, y}` origin and a `w`×`h` size in cells.
   """
-  Record.defrecord(:rect, Record.extract(:rect, from: "include/tuition_layout.hrl"))
+  Record.defrecord(:rect, Record.extract(:rect, from: @rect_hrl))
 
   @doc """
   Record macros for the terminal capability set `#caps{}`
   (`include/tuition_caps.hrl`): the optional enrichments a probe turns on.
   """
-  Record.defrecord(:caps, Record.extract(:caps, from: "include/tuition_caps.hrl"))
+  Record.defrecord(:caps, Record.extract(:caps, from: @caps_hrl))
 
   @doc """
   Record macros for a single rendered cell `#cell{}` (`include/tuition_term.hrl`):
   a glyph plus its style and cached column width.
   """
-  Record.defrecord(:cell, Record.extract(:cell, from: "include/tuition_term.hrl"))
+  Record.defrecord(:cell, Record.extract(:cell, from: @cell_hrl))
 end
