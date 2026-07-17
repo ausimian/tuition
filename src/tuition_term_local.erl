@@ -1,61 +1,62 @@
-%%%-------------------------------------------------------------------
-%%% @doc Local tty terminal backend (OTP 28 raw mode).
-%%%
-%%% Drives the current terminal via the OTP 28 `io' system. This is the Mode 1-3
-%%% backend: the UI process runs locally and renders to the local tty. It has two
-%%% submodes, chosen automatically at {@link open/1} time by how the shell
-%%% responds to `shell:start_interactive({noshell, raw})':
-%%%
-%%% == Noshell submode (escript / `erl -noshell') ==
-%%% `shell:start_interactive({noshell, raw})' returns `ok', putting the tty in
-%%% raw input mode (keys delivered as typed, no echo) *and* raw output mode
-%%% (bytes written verbatim, no ONLCR). Reads/writes/geometry all target the
-%%% `user' device. This is the standalone tool / release path.
-%%%
-%%% == Cooperative submode (launched from a live `iex'/`erl', PRD §7 Mode 1) ==
-%%% When a shell already owns the tty, `shell:start_interactive({noshell, raw})'
-%%% returns `{error, already_started}'. Rather than refusing, the backend reads
-%%% *cooperatively* through the current shell group: the OS tty is already in raw
-%%% *input* mode (`edlin' does line editing in software), so turning `edlin' echo
-%%% off with `io:setopts([{echo, false}])' and reading one byte at a time delivers
-%%% each keystroke immediately, without Enter. Two facts (both validated live on
-%%% OTP 28.3) shape this submode:
-%%%
-%%% <ul>
-%%%   <li>Reads MUST target `group_leader()' (the current shell group), NOT
-%%%       `user': `user' is not the current group in a live shell, so
-%%%       `io:get_chars(user, …)' returns `{error, enotsup}'. Geometry, writes
-%%%       and the opt restore all go to the group leader too.</li>
-%%%   <li>Output stays ONLCR-cooked — `io:setopts([{onlcr, false}])' returns
-%%%       `{error, enotsup}' on a shell group and there is no public way to flip
-%%%       the tty's *output* submode. The renderer addresses the cursor
-%%%       absolutely and never emits a bare `\n' (control codepoints are
-%%%       sanitised out of cells), so ONLCR is harmless. This path does NOT emit
-%%%       raw output.</li>
-%%% </ul>
-%%%
-%%% Ctrl-C/Ctrl-G cannot be bound in cooperative mode: `user_drv' intercepts them
-%%% ahead of the current group (Ctrl-C does `exit(current_group, interrupt)',
-%%% i.e. a hard panic-detach the crash guard restores from). Quit is a normal key
-%%% (`q'), handled by the render loop.
-%%%
-%%% == read/2 timeout contract ==
-%%% `io:get_chars/3' is blocking, but {@link tuition_term} requires a bounded
-%%% `read/2'. A dedicated linked reader process performs the blocking reads and
-%%% forwards bytes to the owner as messages, so `read/2' is a plain
-%%% `receive ... after Timeout'.
-%%%
-%%% == Crash-safe restoration (PRD §8/§10) ==
-%%% Alternate-screen, cursor visibility and (cooperative submode) `edlin' echo are
-%%% toggled by us, so restoring them is our responsibility. {@link close/1}
-%%% restores them on the clean path; a linked guard process restores them if the
-%%% owner dies abnormally, so a host VM that keeps running after the TUI (an
-%%% embedded release, or a live shell) is left with a pristine prompt. In the
-%%% noshell submode the raw termios state is owned by `prim_tty' and additionally
-%%% restored by the runtime on VM exit.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_term_local).
+-moduledoc """
+Local tty terminal backend (OTP 28 raw mode).
+
+Drives the current terminal via the OTP 28 `io` system. This is the local
+backend: the UI process runs locally and renders to the local tty. It has two
+submodes, chosen automatically at `open/1` time by how the shell
+responds to `shell:start_interactive({noshell, raw})`:
+
+## Noshell submode (escript / `erl -noshell`)
+
+`shell:start_interactive({noshell, raw})` returns `ok`, putting the tty in
+raw input mode (keys delivered as typed, no echo) *and* raw output mode
+(bytes written verbatim, no ONLCR). Reads/writes/geometry all target the
+`user` device. This is the standalone tool / release path.
+
+## Cooperative submode (launched from a live `iex`/`erl`)
+
+When a shell already owns the tty, `shell:start_interactive({noshell, raw})`
+returns `{error, already_started}`. Rather than refusing, the backend reads
+*cooperatively* through the current shell group: the OS tty is already in raw
+*input* mode (`edlin` does line editing in software), so turning `edlin` echo
+off with `io:setopts([{echo, false}])` and reading one byte at a time delivers
+each keystroke immediately, without Enter. Two facts (both validated live on
+OTP 28.3) shape this submode:
+
+- Reads MUST target `group_leader()` (the current shell group), NOT
+  `user`: `user` is not the current group in a live shell, so
+  `io:get_chars(user, …)` returns `{error, enotsup}`. Geometry, writes
+  and the opt restore all go to the group leader too.
+- Output stays ONLCR-cooked — `io:setopts([{onlcr, false}])` returns
+  `{error, enotsup}` on a shell group and there is no public way to flip
+  the tty's *output* submode. The renderer addresses the cursor
+  absolutely and never emits a bare `\n` (control codepoints are
+  sanitised out of cells), so ONLCR is harmless. This path does NOT emit
+  raw output.
+
+Ctrl-C/Ctrl-G cannot be bound in cooperative mode: `user_drv` intercepts them
+ahead of the current group (Ctrl-C does `exit(current_group, interrupt)`,
+i.e. a hard panic-detach the crash guard restores from). Quit is a normal key
+(`q`), handled by the render loop.
+
+## read/2 timeout contract
+
+`io:get_chars/3` is blocking, but `m:tuition_term` requires a bounded
+`read/2`. A dedicated linked reader process performs the blocking reads and
+forwards bytes to the owner as messages, so `read/2` is a plain
+`receive... after Timeout`.
+
+## Crash-safe restoration
+
+Alternate-screen, cursor visibility and (cooperative submode) `edlin` echo are
+toggled by us, so restoring them is our responsibility. `close/1`
+restores them on the clean path; a linked guard process restores them if the
+owner dies abnormally, so a host VM that keeps running after the TUI (an
+embedded release, or a live shell) is left with a pristine prompt. In the
+noshell submode the raw termios state is owned by `prim_tty` and additionally
+restored by the runtime on VM exit.
+""".
 -behaviour(tuition_term).
 
 -export([open/1, write/2, read/2, size/1, close/1]).
@@ -83,7 +84,7 @@
 %% The io opts open/1 overrides. latin1 makes the reader deliver raw *input*
 %% bytes (any byte 0..255, so escape sequences and UTF-8 arrive intact for the
 %% parser) and write/2 emit output verbatim; a single encoding governs both
-%% directions. UTF-8 encoding and display width stay in the renderer (issue #5).
+%% directions. UTF-8 encoding and display width stay in the renderer.
 %% The cooperative submode additionally turns edlin echo off; the noshell submode
 %% leaves echo to raw mode (do not touch it — keeps that path byte-identical).
 -define(SETOPTS_NOSHELL, [binary, {encoding, latin1}]).
@@ -110,6 +111,7 @@
 
 %%% -- tuition_term callbacks --------------------------------------------
 
+-doc false.
 -spec open(map()) -> {ok, state()} | {error, term()}.
 open(_Opts) ->
     case shell:start_interactive({noshell, raw}) of
@@ -141,6 +143,7 @@ open(_Opts) ->
             Error
     end.
 
+-doc false.
 -spec write(state(), iodata()) -> ok | {error, term()}.
 write(#st{device = Device}, Data) ->
     %% Emit the already-rendered payload as raw bytes. The device is a latin1
@@ -159,6 +162,7 @@ write(#st{device = Device}, Data) ->
         error:badarg -> {error, non_byte_payload}
     end.
 
+-doc false.
 -spec read(state(), timeout()) -> {ok, binary()} | timeout | {error, term()}.
 read(#st{reader = Reader}, Timeout) ->
     receive
@@ -169,6 +173,7 @@ read(#st{reader = Reader}, Timeout) ->
         timeout
     end.
 
+-doc false.
 -spec size(state()) -> {ok, tuition_term:size()} | {error, term()}.
 size(#st{device = Device}) ->
     case {io:columns(Device), io:rows(Device)} of
@@ -177,6 +182,7 @@ size(#st{device = Device}) ->
         {_, {error, Reason}} -> {error, Reason}
     end.
 
+-doc false.
 -spec close(state()) -> ok.
 close(#st{
     reader = Reader,
@@ -222,10 +228,11 @@ enter(Device, SetOpts, RestoreSeq, ReleaseRaw) ->
 %%
 %% Blocks on a latin1 get_chars request against `Device' and forwards each chunk
 %% to the owner. Reading a single byte at a time keeps latency low; the input
-%% parser (issue #3) reassembles multi-byte escape sequences. In the cooperative
+%% parser reassembles multi-byte escape sequences. In the cooperative
 %% submode one byte per read is also *required*: the shell group is not in raw
 %% terminal_mode, so a multi-char request would block for N chars.
 
+-doc false.
 -spec reader_loop(pid(), io:device()) -> ok.
 reader_loop(Owner, Device) ->
     %% Use an explicit latin1 get_chars request, NOT io:get_chars/3: the latter
@@ -254,6 +261,7 @@ reader_loop(Owner, Device) ->
 %% / raw mode / echo-off. Only the explicit `stop' from close/1 (which has
 %% already restored) is treated as clean.
 
+-doc false.
 -spec guard_loop(pid(), io:device(), binary(), [{atom(), term()}], boolean()) -> ok.
 guard_loop(Owner, Device, RestoreSeq, PrevOpts, ReleaseRaw) ->
     process_flag(trap_exit, true),
@@ -276,6 +284,7 @@ guard_loop(Owner, Device, RestoreSeq, PrevOpts, ReleaseRaw) ->
 %% undo the global raw mode, and finally put the caller's original opts back
 %% (re-enabling edlin echo in the cooperative submode). Best-effort: the
 %% noshell/-noshell path also gets a full termios restore on VM exit.
+-doc false.
 -spec do_restore(io:device(), binary(), [{atom(), term()}], boolean()) -> ok.
 do_restore(Device, RestoreSeq, PrevOpts, ReleaseRaw) ->
     _ = io:put_chars(Device, RestoreSeq),
@@ -304,6 +313,7 @@ maybe_release_raw(false) -> ok.
 %% and restores echo. Restoring just these keys also avoids the whole
 %% io:getopts/1 list, which fails atomically on keys like `onlcr' that setopts
 %% rejects with enotsup (verified) and would strand echo off.
+-doc false.
 -spec saved_opts(io:device(), [term()]) -> [{atom(), term()}].
 saved_opts(Device, SetOpts) ->
     Current = io:getopts(Device),

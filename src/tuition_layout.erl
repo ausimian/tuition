@@ -1,41 +1,43 @@
-%%%-------------------------------------------------------------------
-%%% @doc Constraint/split layout — turn a terminal area into cell rects.
-%%%
-%%% The renderer draws into rectangles, not into a raw terminal size. This
-%%% module is the step in between (PRD §8): given a parent {@type rect()} and a
-%%% list of {@type constraint()}s, it splits the parent along one axis into
-%%% child rects that tile it — adjacent, non-overlapping, and (for a
-%%% well-formed spec) covering the parent exactly with no gap. It is the
-%%% ratatui-style layout model the PRD calls for, minus the general constraint
-%%% solver: enough to place panes for the Phase 0 exit criterion.
-%%%
-%%% == Direction ==
-%%% Following ratatui (PRD §8), the axis names the direction children are
-%%% *stacked*, not the orientation of the divider:
-%%%   * `vertical'   stacks children top-to-bottom, partitioning the height (H).
-%%%   * `horizontal' places children left-to-right, partitioning the width (W).
-%%% The other dimension is inherited unchanged, so a `vertical' split keeps each
-%%% child's full width and a `horizontal' split keeps each child's full height.
-%%%
-%%% == Constraints ==
-%%%   * `{fixed, N}'   — exactly N cells, independent of the parent size.
-%%%   * `{percent, P}' — P percent of the parent's extent along the split axis.
-%%%   * `fill' / `{fill, W}' — share whatever the fixed/percent constraints
-%%%     leave, split between the `fill's in proportion to their weight `W'
-%%%     (bare `fill' is weight 1).
-%%%
-%%% == Tiling guarantee ==
-%%% Sizes are integers (whole cells). Percentages are apportioned with the
-%%% largest-remainder method, so a set that sums to 100% tiles the axis exactly
-%%% rather than leaving a rounding gap — a 30%/70% split of 24 rows yields 7 and
-%%% 17, not 7 and 16. Over-subscription (fixed/percent totals exceeding the
-%%% extent) is clamped: earlier children keep their size and later ones shrink,
-%%% to zero if need be, so results never overflow the parent or overlap.
-%%% Under-subscription with no `fill' leaves the tail of the axis uncovered —
-%%% add a `fill' to absorb the slack.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_layout).
+-moduledoc """
+Constraint/split layout — turn a terminal area into cell rects.
+
+The renderer draws into rectangles, not into a raw terminal size. This
+module is the step in between: given a parent `t:rect/0` and a
+list of `t:constraint/0`s, it splits the parent along one axis into
+child rects that tile it — adjacent, non-overlapping, and (for a
+well-formed spec) covering the parent exactly with no gap. It is the
+ratatui-style layout model, minus the general constraint
+solver: enough to place panes.
+
+## Direction
+
+Following ratatui, the axis names the direction children are
+*stacked*, not the orientation of the divider:
+  * `vertical` stacks children top-to-bottom, partitioning the height (H).
+  * `horizontal` places children left-to-right, partitioning the width (W).
+The other dimension is inherited unchanged, so a `vertical` split keeps each
+child's full width and a `horizontal` split keeps each child's full height.
+
+## Constraints
+
+  * `{fixed, N}` — exactly N cells, independent of the parent size.
+  * `{percent, P}` — P percent of the parent's extent along the split axis.
+  * `fill` / `{fill, W}` — share whatever the fixed/percent constraints
+    leave, split between the `fill`s in proportion to their weight `W`
+    (bare `fill` is weight 1).
+
+## Tiling guarantee
+
+Sizes are integers (whole cells). Percentages are apportioned with the
+largest-remainder method, so a set that sums to 100% tiles the axis exactly
+rather than leaving a rounding gap — a 30%/70% split of 24 rows yields 7 and
+17, not 7 and 16. Over-subscription (fixed/percent totals exceeding the
+extent) is clamped: earlier children keep their size and later ones shrink,
+to zero if need be, so results never overflow the parent or overlap.
+Under-subscription with no `fill` leaves the tail of the axis uncovered —
+add a `fill` to absorb the slack.
+""".
 
 -include("tuition_layout.hrl").
 
@@ -54,20 +56,24 @@
 
 %%% -- API -------------------------------------------------------------
 
-%% @doc Build the root rect covering a whole terminal, from a backend size.
-%%
-%% The origin is `{0, 0}' (top-left) and the size is taken verbatim from the
-%% {@link tuition_term:size()} pair, giving the parent rect that {@link split/3}
-%% subdivides.
+-doc """
+Build the root rect covering a whole terminal, from a backend size.
+
+The origin is `{0, 0}` (top-left) and the size is taken verbatim from the
+`t:tuition_term:size/0` pair, giving the parent rect that `split/3`
+subdivides.
+""".
 -spec area(tuition_term:size()) -> rect().
 area({Cols, Rows}) ->
     #rect{x = 0, y = 0, w = Cols, h = Rows}.
 
-%% @doc Split `Rect' along `Direction' into one child rect per constraint.
-%%
-%% Children are returned in constraint order and laid out contiguously from the
-%% parent's origin. See the module doc for direction and tiling semantics. An
-%% empty constraint list yields `[]'.
+-doc """
+Split `Rect` along `Direction` into one child rect per constraint.
+
+Children are returned in constraint order and laid out contiguously from the
+parent's origin. See the module doc for direction and tiling semantics. An
+empty constraint list yields `[]`.
+""".
 -spec split(direction(), [constraint()], rect()) -> [rect()].
 split(vertical, Constraints, #rect{x = X, y = Y, w = W, h = H}) ->
     {Rects, _} =
@@ -88,36 +94,48 @@ split(horizontal, Constraints, #rect{x = X, y = Y, w = W, h = H}) ->
 
 %%% -- rect accessors --------------------------------------------------
 
-%% @doc Build a rect from an explicit origin `{X, Y}' and size `W'x`H'.
-%%
-%% The record-free constructor: it produces exactly the {@type rect()} that
-%% {@link area/1} and {@link split/3} return, so a caller that cannot reach into
-%% `#rect{}' (a non-Erlang consumer, or code that would rather not depend on the
-%% header) can still hand a rect to a renderer or split it again. Sizes are cell
-%% counts; the origin is zero-based from the terminal's top-left.
+-doc """
+Build a rect from an explicit origin `{X, Y}` and size `W`x`H`.
+
+The record-free constructor: it produces exactly the `t:rect/0` that
+`area/1` and `split/3` return, so a caller that cannot reach into
+`#rect{}` (a non-Erlang consumer, or code that would rather not depend on the
+header) can still hand a rect to a renderer or split it again. Sizes are cell
+counts; the origin is zero-based from the terminal's top-left.
+""".
 -spec rect(non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
     rect().
 rect(X, Y, W, H) ->
     #rect{x = X, y = Y, w = W, h = H}.
 
-%% @doc The rect's left edge — the zero-based column of its origin.
+-doc """
+The rect's left edge — the zero-based column of its origin.
+""".
 -spec x(rect()) -> non_neg_integer().
 x(#rect{x = X}) -> X.
 
-%% @doc The rect's top edge — the zero-based row of its origin.
+-doc """
+The rect's top edge — the zero-based row of its origin.
+""".
 -spec y(rect()) -> non_neg_integer().
 y(#rect{y = Y}) -> Y.
 
-%% @doc The rect's width in columns.
+-doc """
+The rect's width in columns.
+""".
 -spec w(rect()) -> non_neg_integer().
 w(#rect{w = W}) -> W.
 
-%% @doc The rect's height in rows.
+-doc """
+The rect's height in rows.
+""".
 -spec h(rect()) -> non_neg_integer().
 h(#rect{h = H}) -> H.
 
-%% @doc The rect as a `#{x, y, w, h}' map — the four fields at once, for a
-%% consumer that would rather match a map than call the four accessors.
+-doc """
+The rect as a `#{x, y, w, h}` map — the four fields at once, for a
+consumer that would rather match a map than call the four accessors.
+""".
 -spec to_map(rect()) ->
     #{
         x := non_neg_integer(),

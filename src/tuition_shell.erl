@@ -1,87 +1,80 @@
-%%%-------------------------------------------------------------------
-%%% @doc Application shell — hosts a set of panes under one navigable UI.
-%%%
-%%% This is the multi-pane host a BEAM TUI drops into: it hosts the panes it is
-%%% handed (each implementing the {@link tuition_pane} behaviour), switches between
-%%% them, and owns the shared render/input/resize/quit loop each pane used to
-%%% carry its own copy of. It is deliberately ignorant of what the panes observe —
-%%% the caller names the panes and their tab titles (the standalone Sonde tool
-%%% hands it the observability panes through the
-%%% <a href="https://github.com/ausimian/sonde">Sonde</a> façade).
-%%% Where Phase 0 rendered a single "hello, world" pane (issue #8) and the Phase
-%%% 0.5 demos each owned the whole screen with a duplicated loop, the shell owns
-%%% that loop <em>once</em> and delegates the pane-specific work through the
-%%% {@link tuition_pane} behaviour.
-%%%
-%%% == What the shell owns ==
-%%% <ul>
-%%%   <li><b>The loop</b> — open the terminal backend, paint the seed frame behind a
-%%%       full-screen erase, then poll input each iteration, fold it, sample the
-%%%       focused pane on the idle tick, and write the render diff; a resize resets
-%%%       the diff baseline to blank behind a fresh erase. This is the exact shape
-%%%       the panes and demos each duplicated, lifted here.</li>
-%%%   <li><b>Chrome</b> — a nav/tab bar across the top (the hosted panes, the focused
-%%%       one highlighted) and a status/help line across the bottom (the global
-%%%       keys), laid out around the focused pane's rect. A single-pane shell (a demo
-%%%       flag, or a pane run on its own) skips the nav bar — one tab is no choice.</li>
-%%%   <li><b>Input routing</b> — the <em>global</em> keys (Tab/Shift-Tab to switch
-%%%       panes, Ctrl-C to quit) are handled here and never reach a pane; everything
-%%%       else is passed to the focused pane's {@link tuition_pane:apply_events/2}. The
-%%%       global keys are ones no pane binds (Tab is never a printable character), so
-%%%       even the process view's filter mode — which captures every printable key —
-%%%       never has a pane switch stolen from it, nor eats one meant for the shell.
-%%%       Quitting is split: Ctrl-C always quits at the shell; a plain `q' is
-%%%       pane-local, so a pane can decline it (the process view types it into an
-%%%       active filter instead of exiting).</li>
-%%% </ul>
-%%%
-%%% == The sidebar ==
-%%% A host that observes more than one thing (the Sonde node picker, issue #75)
-%%% supplies a `sidebar' option: a pane pinned to a fixed-width left column that is
-%%% <em>always visible</em> alongside whichever main pane has focus. It is an
-%%% ordinary {@link tuition_pane}, so the shell hosts it the same way — it just lives
-%%% beside the tabbed body rather than under a tab of its own. It joins the one Tab
-%%% ring as its leftmost stop (Tab off the last main pane returns to the sidebar),
-%%% and the accent tab in the nav bar is the single focus indicator across the whole
-%%% ring. There are no new keys: the sidebar's own bindings (the picker's up/down,
-%%% Enter, ...) are just the pane-local keys it receives while it holds focus. A
-%%% `status_right' option supplies a function whose result is right-aligned on the
-%%% status line (the picker names the active target and its tier there).
-%%%
-%%% == Sampling ==
-%%% Every <em>visible</em> pane samples on the idle tick (the poll timed out with no
-%%% input), and only then — the same discipline the panes keep on their own: a
-%%% keystroke repaints against the frozen snapshot so rows do not churn under
-%%% navigation, and a hidden pane does no work for a screen nobody is watching. With
-%%% no sidebar that is just the focused pane; with a sidebar it is the active main
-%%% pane <em>and</em> the sidebar, since both are on screen (so the dashboard stays
-%%% live while the picker is browsed, and the picker's node statuses stay fresh
-%%% while a main pane has focus). A pane switched to shows its last sample until the
-%%% next idle tick refreshes it (within the poll cadence).
-%%%
-%%% == Running it ==
-%%% `tuition_shell:start(PaneSpecs)' hosts the given `{Module, Title}' panes and runs
-%%% until the user quits. `start/2' takes an option map as a second argument:
-%%% `active' selects the initial pane (an index, or a pane module), `backend'
-%%% selects the terminal backend (default {@link tuition_term_local}) with the whole
-%%% map passed to its `open/1' — which is how the loop is driven headlessly in
-%%% tests — and `sidebar'/`status_right' add the picker chrome above. A single-element
-%%% pane list is how one pane (a demo flag, or `--processes') runs on its own through
-%%% the same loop.
-%%%
-%%% == Determinism ==
-%%% The pure pieces — {@link new/2}, {@link new/3}, {@link apply_events/2}, {@link
-%%% build_frame/2}, {@link sample/1}, and the {@link active/1} accessor — are
-%%% exported so pane switching, key routing and resize can be asserted directly over
-%%% the scripted backend, the way the pane loops are tested today.
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/input/widget modules. The hosted panes are supplied by
-%%% the caller as data, so the shell has no compile-time dependency on any
-%%% particular pane. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_shell).
+-moduledoc """
+Application shell — hosts a set of panes under one navigable UI.
+
+This is the multi-pane host a BEAM TUI drops into: it hosts the panes it is
+handed (each implementing the `m:tuition_pane` behaviour), switches between
+them, and owns the shared render/input/resize/quit loop each pane used to
+carry its own copy of. It is deliberately ignorant of what the panes observe —
+the caller names the panes and their tab titles. Where earlier demos each
+rendered a single pane or owned the whole screen with a duplicated loop, the
+shell owns that loop *once* and delegates the pane-specific work through the
+`m:tuition_pane` behaviour.
+
+## What the shell owns
+
+- **The loop** — open the terminal backend, paint the seed frame behind a
+  full-screen erase, then poll input each iteration, fold it, sample the
+  focused pane on the idle tick, and write the render diff; a resize resets
+  the diff baseline to blank behind a fresh erase. This is the exact shape
+  the panes and demos each duplicated, lifted here.
+- **Chrome** — a nav/tab bar across the top (the hosted panes, the focused
+  one highlighted) and a status/help line across the bottom (the global
+  keys), laid out around the focused pane's rect. A single-pane shell (a demo
+  flag, or a pane run on its own) skips the nav bar — one tab is no choice.
+- **Input routing** — the *global* keys (Tab/Shift-Tab to switch
+  panes, Ctrl-C to quit) are handled here and never reach a pane; everything
+  else is passed to the focused pane's `c:tuition_pane:apply_events/2`. The
+  global keys are ones no pane binds (Tab is never a printable character), so
+  even the process view's filter mode — which captures every printable key —
+  never has a pane switch stolen from it, nor eats one meant for the shell.
+  Quitting is split: Ctrl-C always quits at the shell; a plain `q` is
+  pane-local, so a pane can decline it (the process view types it into an
+  active filter instead of exiting).
+
+## The sidebar
+
+A host that observes more than one thing
+supplies a `sidebar` option: a pane pinned to a fixed-width left column that is
+*always visible* alongside whichever main pane has focus. It is an
+ordinary `m:tuition_pane`, so the shell hosts it the same way — it just lives
+beside the tabbed body rather than under a tab of its own. It joins the one Tab
+ring as its leftmost stop (Tab off the last main pane returns to the sidebar),
+and the accent tab in the nav bar is the single focus indicator across the whole
+ring. There are no new keys: the sidebar's own bindings (the picker's up/down,
+Enter,...) are just the pane-local keys it receives while it holds focus. A
+`status_right` option supplies a function whose result is right-aligned on the
+status line (the picker names the active target and its tier there).
+
+## Sampling
+
+Every *visible* pane samples on the idle tick (the poll timed out with no
+input), and only then — the same discipline the panes keep on their own: a
+keystroke repaints against the frozen snapshot so rows do not churn under
+navigation, and a hidden pane does no work for a screen nobody is watching. With
+no sidebar that is just the focused pane; with a sidebar it is the active main
+pane *and* the sidebar, since both are on screen (so the dashboard stays
+live while the picker is browsed, and the picker's node statuses stay fresh
+while a main pane has focus). A pane switched to shows its last sample until the
+next idle tick refreshes it (within the poll cadence).
+
+## Running it
+
+`tuition_shell:start(PaneSpecs)` hosts the given `{Module, Title}` panes and runs
+until the user quits. `start/2` takes an option map as a second argument:
+`active` selects the initial pane (an index, or a pane module), `backend`
+selects the terminal backend (default `m:tuition_term_local`) with the whole
+map passed to its `open/1` — which is how the loop is driven headlessly in
+tests — and `sidebar`/`status_right` add the picker chrome above. A single-element
+pane list is how one pane (a demo flag, or `--processes`) runs on its own through
+the same loop.
+
+## Determinism
+
+The pure pieces — `new/2`, `new/3`, `apply_events/2`, `build_frame/2`, `sample/1`, and the `active/1` accessor — are
+exported so pane switching, key routing and resize can be asserted directly over
+the scripted backend, the way the pane loops are tested today.
+""".
 
 -include("tuition_layout.hrl").
 
@@ -148,25 +141,29 @@
 
 %%% -- entry point -----------------------------------------------------
 
-%% @doc Run the shell hosting `PaneSpecs' — a non-empty list of `{Module, Title}'
-%% panes — focused on the first. Blocks until the user quits; returns `ok' once the
-%% terminal is restored, or `{error, Reason}' if the backend could not be opened.
+-doc """
+Run the shell hosting `PaneSpecs` — a non-empty list of `{Module, Title}`
+panes — focused on the first. Blocks until the user quits; returns `ok` once the
+terminal is restored, or `{error, Reason}` if the backend could not be opened.
+""".
 -spec start([pane_spec()]) -> ok | {error, term()}.
 start(PaneSpecs) when is_list(PaneSpecs) -> start(PaneSpecs, #{}).
 
-%% @doc As {@link start/1}, with options. `active' selects the initial pane (an
-%% index, or a pane module matched against the list); `backend' selects the terminal
-%% backend (default {@link tuition_term_local}), with the whole map passed to its
-%% `open/1' — the hook the tests drive the loop through; `sidebar' pins an
-%% always-visible picker pane to a left column (see {@link new/3}); `status_right'
-%% right-aligns a computed string on the status line. A single-element pane list is
-%% how one pane (a demo flag, or `--processes') runs on its own through the shared
-%% loop; the shell then skips the nav bar.
-%%
-%% Enables each pane's optional {@link tuition_pane:setup/0} resource for the run
-%% (the sidebar included) and releases it on teardown (see the module doc), guarded
-%% so both the resource and the terminal are restored on a clean quit and a crash
-%% alike.
+-doc """
+As `start/1`, with options. `active` selects the initial pane (an
+index, or a pane module matched against the list); `backend` selects the terminal
+backend (default `m:tuition_term_local`), with the whole map passed to its
+`open/1` — the hook the tests drive the loop through; `sidebar` pins an
+always-visible picker pane to a left column (see `new/3`); `status_right`
+right-aligns a computed string on the status line. A single-element pane list is
+how one pane (a demo flag, or `--processes`) runs on its own through the shared
+loop; the shell then skips the nav bar.
+
+Enables each pane's optional `c:tuition_pane:setup/0` resource for the run
+(the sidebar included) and releases it on teardown (see the module doc), guarded
+so both the resource and the terminal are restored on a clean quit and a crash
+alike.
+""".
 -spec start([pane_spec()], Opts :: map()) -> ok | {error, term()}.
 start(PaneSpecs, Opts) when is_list(PaneSpecs), is_map(Opts) ->
     Backend = maps:get(backend, Opts, tuition_term_local),
@@ -256,16 +253,18 @@ loop(Handle, Prev, PrevSize, InputSt, Shell) ->
             Error
     end.
 
-%% @doc Sample on a genuine idle tick — but not when the user merely pressed a key,
-%% so a keystroke repaints against the frozen snapshot and the pane stays still under
-%% navigation and typing. The one exception is a pending `resample' request: the
-%% focused pane's last event changed what the visible panes observe (a target
-%% switch), so they sample off this keystroke and refresh together instead of the
-%% just-switched-away node's data lingering under the new target's label until the
-%% next idle tick. The request is consumed here (cleared) whether or not it fired.
-%% The idle test is {@link is_idle_tick/2}: an empty event list alone is not enough,
-%% because a multi-byte key mid-flight also produces one (see there). Exported so the
-%% gate can be tested directly.
+-doc """
+Sample on a genuine idle tick — but not when the user merely pressed a key,
+so a keystroke repaints against the frozen snapshot and the pane stays still under
+navigation and typing. The one exception is a pending `resample` request: the
+focused pane's last event changed what the visible panes observe (a target
+switch), so they sample off this keystroke and refresh together instead of the
+just-switched-away node's data lingering under the new target's label until the
+next idle tick. The request is consumed here (cleared) whether or not it fired.
+The idle test is `is_idle_tick/2`: an empty event list alone is not enough,
+because a multi-byte key mid-flight also produces one (see there). Exported so the
+gate can be tested directly.
+""".
 -spec maybe_sample([tuition_input:event()], tuition_input:state(), state()) -> state().
 maybe_sample(Events, InputSt, #shell{resample = Resample} = Shell) ->
     Shell1 = Shell#shell{resample = false},
@@ -274,22 +273,23 @@ maybe_sample(Events, InputSt, #shell{resample = Resample} = Shell) ->
         false -> Shell1
     end.
 
-%% @doc Whether this poll was a genuine idle tick — the read timed out with no input
-%% pending — as opposed to a keystroke, or one still arriving. The visible pane(s)
-%% sample off this so their snapshots only refresh between the user's actions, never
-%% during one.
-%%
-%% An empty event list is necessary but <em>not</em> sufficient. The local backend
-%% reads one byte at a time, so a multi-byte key — an arrow's `ESC [ A', Home/End,
-%% PgUp/PgDn — arrives across several reads, and every prefix byte parses to zero
-%% events while {@link tuition_input} buffers the partial. Treating those empty polls
-%% as idle ticks re-samples on each byte of a navigation key: it churns the frozen
-%% snapshot the instant the key is pressed, and — because the byte reads land
-%% microseconds apart — measures any per-tick delta over a near-zero window (which is
-%% what made the process view's reduction rate flicker to zero or spike). {@link
-%% tuition_input:pending/1} is true while any such partial is buffered, so a true idle
-%% tick is "no events AND nothing pending". Exported so the predicate can be tested
-%% directly.
+-doc """
+Whether this poll was a genuine idle tick — the read timed out with no input
+pending — as opposed to a keystroke, or one still arriving. The visible pane(s)
+sample off this so their snapshots only refresh between the user's actions, never
+during one.
+
+An empty event list is necessary but *not* sufficient. The local backend
+reads one byte at a time, so a multi-byte key — an arrow's `ESC [ A`, Home/End,
+PgUp/PgDn — arrives across several reads, and every prefix byte parses to zero
+events while `m:tuition_input` buffers the partial. Treating those empty polls
+as idle ticks re-samples on each byte of a navigation key: it churns the frozen
+snapshot the instant the key is pressed, and — because the byte reads land
+microseconds apart — measures any per-tick delta over a near-zero window (which is
+what made the process view's reduction rate flicker to zero or spike). `tuition_input:pending/1` is true while any such partial is buffered, so a true idle
+tick is "no events AND nothing pending". Exported so the predicate can be tested
+directly.
+""".
 -spec is_idle_tick([tuition_input:event()], tuition_input:state()) -> boolean().
 is_idle_tick([], InputSt) -> not tuition_input:pending(InputSt);
 is_idle_tick(_Events, _InputSt) -> false.
@@ -319,11 +319,12 @@ render(Handle, Prev, PrevSize, Shell) ->
 
 %%% -- input routing ---------------------------------------------------
 
-%% @doc Fold input events into the shell in arrival order, short-circuiting to
-%% `quit'. Each event is either a shell-global key handled here — Ctrl-C quits,
-%% Tab/Shift-Tab switch focus — or is passed to the focused pane's {@link
-%% tuition_pane:apply_events/2}, which may itself return `quit'. Events are routed one
-%% at a time so a switch mid-batch retargets the events after it.
+-doc """
+Fold input events into the shell in arrival order, short-circuiting to
+`quit`. Each event is either a shell-global key handled here — Ctrl-C quits,
+Tab/Shift-Tab switch focus — or is passed to the focused pane's `c:tuition_pane:apply_events/2`, which may itself return `quit`. Events are routed one
+at a time so a switch mid-batch retargets the events after it.
+""".
 -spec apply_events([tuition_input:event()], state()) -> {ok, state()} | quit.
 apply_events([], Shell) ->
     {ok, Shell};
@@ -395,10 +396,12 @@ apply_ring_pos(Shell, Pos) -> Shell#shell{focus = main, active = Pos - 1}.
 
 %%% -- sampling --------------------------------------------------------
 
-%% @doc Refresh the visible pane(s) from the running node (impure). The active main
-%% pane always samples (it is always on screen); the sidebar samples too when one is
-%% configured (it is pinned visible alongside). A hidden main pane keeps its last
-%% state until switched to. Exposed so a test can drive the live path directly.
+-doc """
+Refresh the visible pane(s) from the running node (impure). The active main
+pane always samples (it is always on screen); the sidebar samples too when one is
+configured (it is pinned visible alongside). A hidden main pane keeps its last
+state until switched to. Exposed so a test can drive the live path directly.
+""".
 -spec sample(state()) -> state().
 sample(Shell) ->
     sample_sidebar(sample_active(Shell)).
@@ -418,11 +421,13 @@ sample_sidebar(#shell{sidebar = #pane{module = Mod, state = St} = Pane} = Shell)
 
 %%% -- frame building --------------------------------------------------
 
-%% @doc Build the whole frame for the current size: the nav bar (the sidebar tab
-%% plus one per main pane, when there is more than one focus stop), the sidebar
-%% and active main pane tiled into the body, and the status line. Returns the buffer
-%% and the updated shell state — a rendered pane may have reconciled its scroll
-%% offset, which must persist to the next frame.
+-doc """
+Build the whole frame for the current size: the nav bar (the sidebar tab
+plus one per main pane, when there is more than one focus stop), the sidebar
+and active main pane tiled into the body, and the status line. Returns the buffer
+and the updated shell state — a rendered pane may have reconciled its scroll
+offset, which must persist to the next frame.
+""".
 -spec build_frame(tuition_term:size(), state()) -> {tuition_render:buffer(), state()}.
 build_frame(Size, Shell) ->
     ShowNav = show_nav(Shell),
@@ -598,20 +603,25 @@ status_text(false) -> <<"ctrl-c quit">>.
 
 %%% -- state -----------------------------------------------------------
 
-%% @doc The shell's initial state over a pane list, focused on the first pane.
+-doc """
+The shell's initial state over a pane list, focused on the first pane.
+""".
 -spec new([pane_spec()]) -> state().
 new(PaneSpecs) -> new(PaneSpecs, 0).
 
-%% @doc As {@link new/1}, focused on pane `Active' (clamped into the list).
+-doc """
+As `new/1`, focused on pane `Active` (clamped into the list).
+""".
 -spec new([pane_spec()], non_neg_integer()) -> state().
 new(PaneSpecs, Active) -> new(PaneSpecs, Active, #{}).
 
-%% @doc As {@link new/2}, reading the chrome extras from `Opts': `sidebar' pins an
-%% always-visible {@link sidebar_spec()} pane to a left column and adds it to the Tab
-%% ring; `status_right' supplies a function whose result is right-aligned on the
-%% status line. Each pane (the sidebar included) is seeded with its module's {@link
-%% tuition_pane:new/0}. Exported so pane switching, routing and the sidebar layout can
-%% be driven purely, without a terminal.
+-doc """
+As `new/2`, reading the chrome extras from `Opts`: `sidebar` pins an
+always-visible `t:sidebar_spec/0` pane to a left column and adds it to the Tab
+ring; `status_right` supplies a function whose result is right-aligned on the
+status line. Each pane (the sidebar included) is seeded with its module's `c:tuition_pane:new/0`. Exported so pane switching, routing and the sidebar layout can
+be driven purely, without a terminal.
+""".
 -spec new([pane_spec()], non_neg_integer(), map()) -> state().
 new(PaneSpecs, Active, Opts) ->
     Panes = [#pane{module = M, title = T, state = M:new()} || {M, T} <- PaneSpecs],
@@ -641,37 +651,51 @@ build_sidebar(#{module := Module, title := Title} = Spec) ->
     Pane = #pane{module = Module, title = Title, state = Module:new()},
     {Pane, maps:get(width, Spec, ?DEFAULT_SIDEBAR_WIDTH)}.
 
-%% @doc The focused main pane's index — exposed so a test can assert how a switch
-%% moved the focus.
+-doc """
+The focused main pane's index — exposed so a test can assert how a switch
+moved the focus.
+""".
 -spec active(state()) -> non_neg_integer().
 active(#shell{active = Active}) -> Active.
 
-%% @doc The active main pane's module.
+-doc """
+The active main pane's module.
+""".
 -spec active_module(state()) -> module().
 active_module(Shell) -> (active_pane(Shell))#pane.module.
 
-%% @doc The active main pane's UI state — exposed so a test can assert that a
-%% pane-local key reached the pane (e.g. moved its selection).
+-doc """
+The active main pane's UI state — exposed so a test can assert that a
+pane-local key reached the pane (e.g. moved its selection).
+""".
 -spec active_state(state()) -> tuition_pane:state().
 active_state(Shell) -> (active_pane(Shell))#pane.state.
 
-%% @doc Which element currently holds keyboard focus — a main pane (`main') or the
-%% sidebar (`sidebar'). Without a sidebar this is always `main'.
+-doc """
+Which element currently holds keyboard focus — a main pane (`main`) or the
+sidebar (`sidebar`). Without a sidebar this is always `main`.
+""".
 -spec focus(state()) -> main | sidebar.
 focus(#shell{focus = Focus}) -> Focus.
 
-%% @doc The focused element's module (the sidebar's when it holds focus, else the
-%% active main pane's) — exposed so a test can assert where a key was routed.
+-doc """
+The focused element's module (the sidebar's when it holds focus, else the
+active main pane's) — exposed so a test can assert where a key was routed.
+""".
 -spec focused_module(state()) -> module().
 focused_module(Shell) -> (focused_pane(Shell))#pane.module.
 
-%% @doc The sidebar pane's UI state, or `none' when there is no sidebar — exposed so
-%% a test can assert that a key reached the sidebar.
+-doc """
+The sidebar pane's UI state, or `none` when there is no sidebar — exposed so
+a test can assert that a key reached the sidebar.
+""".
 -spec sidebar_state(state()) -> none | tuition_pane:state().
 sidebar_state(#shell{sidebar = #pane{state = St}}) -> St;
 sidebar_state(#shell{sidebar = none}) -> none.
 
-%% @doc How many main panes the shell hosts (the sidebar is not counted).
+-doc """
+How many main panes the shell hosts (the sidebar is not counted).
+""".
 -spec pane_count(state()) -> non_neg_integer().
 pane_count(#shell{panes = Panes}) -> length(Panes).
 

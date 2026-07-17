@@ -1,55 +1,54 @@
-%%%-------------------------------------------------------------------
-%%% @doc Sparkline widget — a compact bar chart of a numeric series.
-%%%
-%%% A sparkline draws one vertical bar per data point, its height proportional to
-%%% the value, packing a whole time series into a single strip a few rows tall. It
-%%% is the ratatui `Sparkline': the dashboard primitive (PRD §9.1) that puts a
-%%% metric's recent history — memory over time, run-queue length, a scheduler's
-%%% utilization trend — beside its {@link tuition_gauge} current-value bar.
-%%%
-%%% == Sub-cell precision ==
-%%% Each bar is drawn bottom-up with the Unicode eighth-block glyphs (U+2581 `▁'
-%%% up to U+2588 `█'), so a value between two whole rows still shows its true
-%%% height: the bar's whole rows are full blocks and its top row a partial block
-%%% filled to the nearest eighth. A one-row sparkline thus resolves eight distinct
-%%% levels, not two. This is ratatui's default nine-level bar set; the glyphs are
-%%% all one column in {@link tuition_width}.
-%%%
-%%% == Scaling and the window ==
-%%% Values are scaled so `max' maps to the full height of the area. Pass `max'
-%%% explicitly when the series has a known ceiling (a scheduler's utilization tops
-%%% out at its sample window; a memory gauge at the node's total) so the strip's
-%%% height is stable frame to frame; leave it `auto' and the tallest *visible* bar
-%%% fills the height. A value above `max' is clamped to full height rather than
-%%% overflowing.
-%%%
-%%% Only the most recent `width' points are drawn — the series is a growing
-%%% history the caller keeps appending to, so the widget shows its tail. They are
-%%% laid left to right (oldest visible point at the left, newest at the right), so
-%%% until the history fills the strip it grows rightward from the left edge and
-%%% then scrolls, the newest bar always at the rightmost filled column.
-%%%
-%%% == Stateless ==
-%%% A sparkline holds no state between frames: the caller keeps the history (a
-%%% bounded list it pushes each new sample onto) and passes it as `data'. It
-%%% implements the plain {@link tuition_widget} `render/3' callback.
-%%%
-%%% == Config ==
-%%% A `#{}' map, every key optional:
-%%% <ul>
-%%%   <li>`data' — the series, a list of non-negative integers (default `[]' — an
-%%%       empty sparkline draws nothing). Negative values are treated as zero.</li>
-%%%   <li>`max' — `auto' (default; the maximum of the visible points, at least 1)
-%%%       or an explicit positive integer the bars are scaled against.</li>
-%%%   <li>`style' — the style of the bar glyphs (default: unstyled — set at least
-%%%       `fg' to colour the strip).</li>
-%%% </ul>
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_sparkline).
+-moduledoc """
+Sparkline widget — a compact bar chart of a numeric series.
+
+A sparkline draws one vertical bar per data point, its height proportional to
+the value, packing a whole time series into a single strip a few rows tall. It
+is the ratatui `Sparkline`: the dashboard primitive that puts a
+metric's recent history — memory over time, run-queue length, a scheduler's
+utilization trend — beside its `m:tuition_gauge` current-value bar.
+
+## Sub-cell precision
+
+Each bar is drawn bottom-up with the Unicode eighth-block glyphs (U+2581 `▁`
+up to U+2588 `█`), so a value between two whole rows still shows its true
+height: the bar's whole rows are full blocks and its top row a partial block
+filled to the nearest eighth. A one-row sparkline thus resolves eight distinct
+levels, not two. This is ratatui's default nine-level bar set; the glyphs are
+all one column in `m:tuition_width`.
+
+## Scaling and the window
+
+Values are scaled so `max` maps to the full height of the area. Pass `max`
+explicitly when the series has a known ceiling (a scheduler's utilization tops
+out at its sample window; a memory gauge at the node's total) so the strip's
+height is stable frame to frame; leave it `auto` and the tallest *visible* bar
+fills the height. A value above `max` is clamped to full height rather than
+overflowing.
+
+Only the most recent `width` points are drawn — the series is a growing
+history the caller keeps appending to, so the widget shows its tail. They are
+laid left to right (oldest visible point at the left, newest at the right), so
+until the history fills the strip it grows rightward from the left edge and
+then scrolls, the newest bar always at the rightmost filled column.
+
+## Stateless
+
+A sparkline holds no state between frames: the caller keeps the history (a
+bounded list it pushes each new sample onto) and passes it as `data`. It
+implements the plain `m:tuition_widget` `render/3` callback.
+
+## Config
+
+A `#{}` map, every key optional:
+
+- `data` — the series, a list of non-negative integers (default `[]` — an
+  empty sparkline draws nothing). Negative values are treated as zero.
+- `max` — `auto` (default; the maximum of the visible points, at least 1)
+  or an explicit positive integer the bars are scaled against.
+- `style` — the style of the bar glyphs (default: unstyled — set at least
+  `fg` to colour the strip).
+""".
 -behaviour(tuition_widget).
 
 -include("tuition_layout.hrl").
@@ -66,8 +65,10 @@
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Draw the sparkline into `Area'. A degenerate area (no columns or rows)
-%% draws nothing. See the module doc for the config map.
+-doc """
+Draw the sparkline into `Area`. A degenerate area (no columns or rows)
+draws nothing. See the module doc for the config map.
+""".
 -spec render(sparkline(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Spark, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;

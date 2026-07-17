@@ -1,96 +1,98 @@
-%%%-------------------------------------------------------------------
-%%% @doc Text input field — a single-line, editable value with a caret and
-%%% horizontal scroll (stateful).
-%%%
-%%% Where {@link tuition_input} / {@link tuition_input_driver} turn a byte stream
-%%% into structured key events, this is the on-screen counterpart: a rendered,
-%%% editable field that shows typed text, a caret, and a scrolling view of a value
-%%% longer than the field is wide. It is the affordance a filter/search box or a
-%%% command line is built from (PRD §9). It is ratatui-land's `tui-input'.
-%%%
-%%% == Stateful, by necessity ==
-%%% The value, the caret position and the scroll offset live in an `#input_state{}'
-%%% (see `include/tuition_widget.hrl') held by the *caller*, not in this module —
-%%% the renderer is immediate-mode and discards every frame, so state kept inside
-%%% the widget would not survive (see {@link tuition_widget}). Editing is a pure
-%%% state transition the caller applies to each decoded event, and {@link render/4}
-%%% takes the state and returns it with the scroll offset reconciled to keep the
-%%% caret in view:
-%%% <pre>
-%%%   {State1, _Changed} = tuition_input_field:handle(Event, State0),
-%%%   {Buf1, State2}     = tuition_input_field:render(Cfg, Area, Buf0, State1).
-%%% </pre>
-%%% This is ratatui's `StatefulWidget' split, made explicit because Erlang has no
-%%% `&mut'.
-%%%
-%%% == Editing ({@link handle/2}) ==
-%%% {@link handle/2} folds one decoded {@link tuition_input:event()} into the state
-%%% and reports whether the *value* changed (so a caller can re-run its filter only
-%%% when it must — a bare caret move returns `false'):
-%%% <ul>
-%%%   <li>a printable `char' (no `ctrl'/`alt'/`meta') is inserted at the caret;</li>
-%%%   <li>`backspace' deletes the cluster before the caret, `delete' the one
-%%%       after;</li>
-%%%   <li>`left'/`right' move the caret one grapheme cluster; with `ctrl' or `alt'
-%%%       held they move by a word;</li>
-%%%   <li>`home'/`end' jump to the start/end;</li>
-%%%   <li>a `{paste, _}' inserts its text at the caret, with control bytes (a
-%%%       newline included, since the field is single-line) stripped;</li>
-%%%   <li>anything else (`enter', `tab', arrows the field does not use, a `ctrl'
-%%%       chord, a mouse report) is left for the caller to act on and returns the
-%%%       state unchanged.</li>
-%%% </ul>
-%%% Caret movement and word boundaries are grapheme-cluster aware — a wide glyph or
-%%% a base-plus-combining-mark cluster is one step — measured with the same {@link
-%%% tuition_widget:display_width/1} the renderer clips by, so the caret column the
-%%% field scrolls to and the column the glyph actually lands on never disagree. A
-%%% word is a maximal run of non-space clusters; a word move skips any spaces then
-%%% the run beside them.
-%%%
-%%% == Horizontal scroll ==
-%%% When the value is wider than the field, {@link render/4} slides `offset' (the
-%%% index of the leftmost visible cluster) just far enough to keep the caret in
-%%% view: leftward when the caret sits left of the window, rightward when it runs
-%%% off the right — reserving one column for the caret so a caret at the very end
-%%% of a full field is still shown — and it pulls back left to avoid a needless
-%%% blank tail after the value shrinks. Scrolling is by whole clusters, so a wide
-%%% glyph is never split across the left edge. The reconciled offset is returned
-%%% and kept for the next frame, the horizontal analogue of {@link tuition_list}'s
-%%% vertical `offset'.
-%%%
-%%% == The caret is a styled cell ==
-%%% The application owns (and hides) the hardware cursor, so the field draws its own
-%%% caret as a styled cell: `cursor_style' is overlaid on whatever cell already sits
-%%% at the caret column — the value glyph, the placeholder glyph, or the blank an
-%%% unstyled field left transparent — preserving that cell's own style (a parent
-%%% block's background included) rather than punching a default-styled hole through
-%%% it. The default `cursor_style' is `underline', the one attribute always visible
-%%% over a blank (a `reverse' block cursor awaits the richer style model of #8). An
-%%% empty `cursor_style' draws no visible caret, which is how a caller marks the
-%%% field unfocused.
-%%%
-%%% == Config ==
-%%% A `#{}' map, every key optional:
-%%% <ul>
-%%%   <li>`placeholder'       — chardata shown when the value is empty (default
-%%%       none).</li>
-%%%   <li>`style'             — base style for the field, filling its full width
-%%%       (default: unstyled, so a parent background shows through).</li>
-%%%   <li>`cursor_style'      — style overlaid on the caret cell (default
-%%%       `#{underline => true}'; `#{}' to hide the caret).</li>
-%%%   <li>`placeholder_style' — style for the placeholder text (default
-%%%       `#{fg => 8}', a dim grey).</li>
-%%%   <li>`mask'              — a single codepoint to display in place of every
-%%%       value cluster, for a password-style field (default: show the value).</li>
-%%% </ul>
-%%% The field draws on the top row of `Area' and confines itself to it; give it a
-%%% one-row rect via {@link tuition_layout}.
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_input_field).
+-moduledoc """
+Text input field — a single-line, editable value with a caret and
+horizontal scroll (stateful).
+
+Where `m:tuition_input` / `m:tuition_input_driver` turn a byte stream
+into structured key events, this is the on-screen counterpart: a rendered,
+editable field that shows typed text, a caret, and a scrolling view of a value
+longer than the field is wide. It is the affordance a filter/search box or a
+command line is built from. It is ratatui-land's `tui-input`.
+
+## Stateful, by necessity
+
+The value, the caret position and the scroll offset live in an `#input_state{}`
+(see `include/tuition_widget.hrl`) held by the *caller*, not in this module —
+the renderer is immediate-mode and discards every frame, so state kept inside
+the widget would not survive (see `m:tuition_widget`). Editing is a pure
+state transition the caller applies to each decoded event, and `render/4`
+takes the state and returns it with the scroll offset reconciled to keep the
+caret in view:
+
+```
+{State1, _Changed} = tuition_input_field:handle(Event, State0),
+{Buf1, State2} = tuition_input_field:render(Cfg, Area, Buf0, State1).
+```
+
+This is ratatui's `StatefulWidget` split, made explicit because Erlang has no
+`&mut`.
+
+## Editing (`handle/2`)
+
+`handle/2` folds one decoded `t:tuition_input:event/0` into the state
+and reports whether the *value* changed (so a caller can re-run its filter only
+when it must — a bare caret move returns `false`):
+
+- a printable `char` (no `ctrl`/`alt`/`meta`) is inserted at the caret;
+- `backspace` deletes the cluster before the caret, `delete` the one
+  after;
+- `left`/`right` move the caret one grapheme cluster; with `ctrl` or `alt`
+  held they move by a word;
+- `home`/`end` jump to the start/end;
+- a `{paste, _}` inserts its text at the caret, with control bytes (a
+  newline included, since the field is single-line) stripped;
+- anything else (`enter`, `tab`, arrows the field does not use, a `ctrl`
+  chord, a mouse report) is left for the caller to act on and returns the
+  state unchanged.
+
+Caret movement and word boundaries are grapheme-cluster aware — a wide glyph or
+a base-plus-combining-mark cluster is one step — measured with the same `tuition_widget:display_width/1` the renderer clips by, so the caret column the
+field scrolls to and the column the glyph actually lands on never disagree. A
+word is a maximal run of non-space clusters; a word move skips any spaces then
+the run beside them.
+
+## Horizontal scroll
+
+When the value is wider than the field, `render/4` slides `offset` (the
+index of the leftmost visible cluster) just far enough to keep the caret in
+view: leftward when the caret sits left of the window, rightward when it runs
+off the right — reserving one column for the caret so a caret at the very end
+of a full field is still shown — and it pulls back left to avoid a needless
+blank tail after the value shrinks. Scrolling is by whole clusters, so a wide
+glyph is never split across the left edge. The reconciled offset is returned
+and kept for the next frame, the horizontal analogue of `m:tuition_list`'s
+vertical `offset`.
+
+## The caret is a styled cell
+
+The application owns (and hides) the hardware cursor, so the field draws its own
+caret as a styled cell: `cursor_style` is overlaid on whatever cell already sits
+at the caret column — the value glyph, the placeholder glyph, or the blank an
+unstyled field left transparent — preserving that cell's own style (a parent
+block's background included) rather than punching a default-styled hole through
+it. The default `cursor_style` is `underline`, the one attribute always visible
+over a blank (a `reverse` block cursor awaits the richer style model). An
+empty `cursor_style` draws no visible caret, which is how a caller marks the
+field unfocused.
+
+## Config
+
+A `#{}` map, every key optional:
+
+- `placeholder` — chardata shown when the value is empty (default
+  none).
+- `style` — base style for the field, filling its full width
+  (default: unstyled, so a parent background shows through).
+- `cursor_style` — style overlaid on the caret cell (default
+  `#{underline => true}`; `#{}` to hide the caret).
+- `placeholder_style` — style for the placeholder text (default
+  `#{fg => 8}`, a dim grey).
+- `mask` — a single codepoint to display in place of every
+  value cluster, for a password-style field (default: show the value).
+
+The field draws on the top row of `Area` and confines itself to it; give it a
+one-row rect via `m:tuition_layout`.
+""".
 
 -include("tuition_layout.hrl").
 -include("tuition_term.hrl").
@@ -111,33 +113,41 @@
 
 %% A caret drawn over a blank needs an attribute that shows without a glyph;
 %% underline is the one always available today (bold on a space is invisible, and
-%% there is no `reverse' yet — see #8). A dim grey placeholder is the convention
+%% there is no `reverse' yet). A dim grey placeholder is the convention
 %% for "no value here". Both are overridable via config.
 -define(DEFAULT_CURSOR_STYLE, #{underline => true}).
 -define(DEFAULT_PLACEHOLDER_STYLE, #{fg => 8}).
 
 %%% -- state -----------------------------------------------------------
 
-%% @doc A fresh, empty field: no text, caret at the start, unscrolled. A caller
-%% that does not want to include `tuition_widget.hrl' can start here and drive the
-%% field through the API ({@link handle/2}, {@link set_value/2}, {@link value/1},
-%% {@link cursor/1}).
+-doc """
+A fresh, empty field: no text, caret at the start, unscrolled. A caller
+that does not want to include `tuition_widget.hrl` can start here and drive the
+field through the API (`handle/2`, `set_value/2`, `value/1`,
+`cursor/1`).
+""".
 -spec new() -> state().
 new() -> #input_state{}.
 
-%% @doc The field's current value, as a UTF-8 binary.
+-doc """
+The field's current value, as a UTF-8 binary.
+""".
 -spec value(state()) -> binary().
 value(#input_state{value = Value}) -> Value.
 
-%% @doc The caret position, as a 0-based grapheme-cluster index into the value
-%% (`0' before the first cluster, the cluster count after the last).
+-doc """
+The caret position, as a 0-based grapheme-cluster index into the value
+(`0` before the first cluster, the cluster count after the last).
+""".
 -spec cursor(state()) -> non_neg_integer().
 cursor(#input_state{cursor = Cursor}) -> Cursor.
 
-%% @doc Replace the value wholesale and place the caret at its end. Control bytes
-%% (newlines included — the field is single-line) are stripped, so a value pasted
-%% in programmatically renders as one clean line. The scroll offset is reset and
-%% reconciled at the next {@link render/4}.
+-doc """
+Replace the value wholesale and place the caret at its end. Control bytes
+(newlines included — the field is single-line) are stripped, so a value pasted
+in programmatically renders as one clean line. The scroll offset is reset and
+reconciled at the next `render/4`.
+""".
 -spec set_value(state(), unicode:chardata()) -> state().
 set_value(State, Chardata) ->
     Value = sanitize(to_bin(Chardata)),
@@ -145,11 +155,13 @@ set_value(State, Chardata) ->
 
 %%% -- editing ---------------------------------------------------------
 
-%% @doc Fold one decoded {@link tuition_input:event()} into the field, returning
-%% the updated state and whether the *value* changed. A bare caret move (`left',
-%% `home', ...) returns `false' though the state's caret moved, so a caller can
-%% gate an expensive re-filter on real edits; an event the field ignores returns
-%% the state unchanged and `false'. See the module doc for the key bindings.
+-doc """
+Fold one decoded `t:tuition_input:event/0` into the field, returning
+the updated state and whether the *value* changed. A bare caret move (`left`,
+`home`,...) returns `false` though the state's caret moved, so a caller can
+gate an expensive re-filter on real edits; an event the field ignores returns
+the state unchanged and `false`. See the module doc for the key bindings.
+""".
 -spec handle(tuition_input:event(), state()) -> {state(), Changed :: boolean()}.
 handle(Event, #input_state{value = Before} = State0) ->
     State1 = apply_event(Event, State0),
@@ -304,11 +316,13 @@ word_mod(Mods) ->
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Draw the field into the top row of `Area' — the visible slice of the value
-%% (or the placeholder when empty) with the caret over it — and return the buffer
-%% together with the reconciled state (caret clamped into range, scroll offset slid
-%% to keep the caret in view). A degenerate area draws nothing but still reconciles
-%% the state, so a resize to nothing and back leaves a valid caret/offset behind.
+-doc """
+Draw the field into the top row of `Area` — the visible slice of the value
+(or the placeholder when empty) with the caret over it — and return the buffer
+together with the reconciled state (caret clamped into range, scroll offset slid
+to keep the caret in view). A degenerate area draws nothing but still reconciles
+the state, so a resize to nothing and back leaves a valid caret/offset behind.
+""".
 -spec render(input_cfg(), #rect{}, tuition_render:buffer(), state()) ->
     {tuition_render:buffer(), state()}.
 render(Cfg, #rect{w = W, h = H} = Area, Buf, State0) ->
@@ -337,10 +351,12 @@ display_one(_GC, Mask) when is_integer(Mask) ->
 display_one(GC, _Mask) ->
     {GC, tuition_widget:display_width(GC)}.
 
-%% @doc Reconcile an `#input_state{}' against the current value and field width:
-%% clamp the caret into `[0, N]' (the cluster count) and slide the scroll offset so
-%% the caret falls within the visible window. Pure: the returned state is what
-%% survives to the next frame.
+-doc """
+Reconcile an `#input_state{}` against the current value and field width:
+clamp the caret into `[0, N]` (the cluster count) and slide the scroll offset so
+the caret falls within the visible window. Pure: the returned state is what
+survives to the next frame.
+""".
 -spec reconcile(state(), [{binary(), non_neg_integer()}], integer()) -> state().
 reconcile(#input_state{value = Value, cursor = Cursor0, offset = Offset0}, Display, W) ->
     N = length(Display),

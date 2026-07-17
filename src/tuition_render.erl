@@ -1,71 +1,72 @@
-%%%-------------------------------------------------------------------
-%%% @doc Double-buffered cell grid with diff-based minimal repaint.
-%%%
-%%% The renderer is immediate-mode, the ratatui model the PRD calls for (§8):
-%%% every frame is rebuilt from scratch into a fresh {@type buffer()} of
-%%% {@link //tuition/tuition_term:size()} cells, then {@link diff/2} compares it
-%%% against the buffer currently on screen and emits ANSI for *only* the cells
-%%% that changed. The caller keeps the last buffer as the next frame's baseline:
-%%% <pre>
-%%%   Prev0 = tuition_render:new(Size),                 %% blank screen
-%%%   Next  = build_frame(State),                     %% put_text/put_cell ...
-%%%   ok    = tuition_term:write(Handle, tuition_render:diff(Prev0, Next)),
-%%%   loop(Handle, Next).                             %% Next becomes the baseline
-%%% </pre>
-%%%
-%%% == Minimal output (§8) ==
-%%% Emission walks the grid in row-major order and, for each changed cell,
-%%% writes a cursor-position (`ESC [ row ; col H') only when the cursor is not
-%%% already there, then baseline SGR only when the style differs from what is
-%%% already active, then the glyph bytes. Contiguous changed cells in a row thus
-%%% share a single cursor move and a single SGR. Re-rendering an unchanged frame
-%%% emits nothing; changing one cell emits a lone cursor move plus that cell's
-%%% bytes.
-%%%
-%%% The buffer is stored row-major (see the `#buf{}' record): each row is a
-%%% separate term, so before scanning a row's cells `diff/2' first compares the
-%%% two rows with `=:=' and skips the whole row when they are equal. The per-cell
-%%% scan floor is therefore paid only on rows that actually changed, not on every
-%%% cell of the frame — the common interactive case (a few changed cells on an
-%%% otherwise-static screen) touches only its handful of dirty rows, which is
-%%% what keeps repaint cheap on large terminals.
-%%%
-%%% == SGR boundary invariant ==
-%%% A diff assumes the terminal is at default SGR when it starts and restores
-%%% default SGR before it returns (a trailing `ESC [ 0 m' iff it left a styled
-%%% run active). Successive diffs therefore compose without the style of one
-%%% frame bleeding into the next. Cursor visibility and the alternate screen are
-%%% the backend's responsibility ({@link //tuition/tuition_term_local}), not
-%%% the renderer's.
-%%%
-%%% == Column width (§8, issue #5) ==
-%%% Column advance uses {@link //tuition/tuition_width:width/1}, never the
-%%% codepoint count: a wide (East-Asian / emoji) glyph occupies two columns. Its
-%%% left cell holds the glyph and the cell to its right is a `wide_cont'
-%%% placeholder that is never emitted on its own — it is painted by the two-wide
-%%% glyph to its left. Overwriting either half of a wide glyph dissolves the
-%%% orphaned half back to blank so the grid stays consistent. A wide glyph with
-%%% no room for its right half in the final column is dropped, never stored. A
-%%% lone zero-width cluster (a stray combining mark or ZWSP) is likewise dropped:
-%%% it advances no column on the terminal, so storing it as a cell would leave
-%%% the model's cursor a column ahead of the terminal's and desync the run. A
-%%% malformed cluster wider than two columns is replaced with a single
-%%% replacement character, so the column advance can never trail the emitted
-%%% bytes for untrusted text.
-%%%
-%%% == Content safety ==
-%%% A cell never stores a C0/C1 control codepoint (`0x00'–`0x1F', `0x7F'–`0x9F'):
-%%% drawing replaces it with a blank. Rendered content is routinely untrusted — a
-%%% process name, a message, a stacktrace from an observed node — so a stray
-%%% `ESC' or newline must never reach the terminal as a cursor move or the start
-%%% of an escape sequence, which would desync the model or inject arbitrary
-%%% terminal control (PRD §8/§10).
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' (plus the
-%%% sibling `tuition_width'/`tuition_layout' modules). No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_render).
+-moduledoc """
+Double-buffered cell grid with diff-based minimal repaint.
+
+The renderer is immediate-mode, the ratatui model:
+every frame is rebuilt from scratch into a fresh `t:buffer/0` of
+`t:tuition_term:size/0` cells, then `diff/2` compares it
+against the buffer currently on screen and emits ANSI for *only* the cells
+that changed. The caller keeps the last buffer as the next frame's baseline:
+
+```
+Prev0 = tuition_render:new(Size), %% blank screen
+Next = build_frame(State), %% put_text/put_cell...
+ok = tuition_term:write(Handle, tuition_render:diff(Prev0, Next)),
+loop(Handle, Next). %% Next becomes the baseline
+```
+
+## Minimal output
+
+Emission walks the grid in row-major order and, for each changed cell,
+writes a cursor-position (`ESC [ row; col H`) only when the cursor is not
+already there, then baseline SGR only when the style differs from what is
+already active, then the glyph bytes. Contiguous changed cells in a row thus
+share a single cursor move and a single SGR. Re-rendering an unchanged frame
+emits nothing; changing one cell emits a lone cursor move plus that cell's
+bytes.
+
+The buffer is stored row-major (see the `#buf{}` record): each row is a
+separate term, so before scanning a row's cells `diff/2` first compares the
+two rows with `=:=` and skips the whole row when they are equal. The per-cell
+scan floor is therefore paid only on rows that actually changed, not on every
+cell of the frame — the common interactive case (a few changed cells on an
+otherwise-static screen) touches only its handful of dirty rows, which is
+what keeps repaint cheap on large terminals.
+
+## SGR boundary invariant
+
+A diff assumes the terminal is at default SGR when it starts and restores
+default SGR before it returns (a trailing `ESC [ 0 m` iff it left a styled
+run active). Successive diffs therefore compose without the style of one
+frame bleeding into the next. Cursor visibility and the alternate screen are
+the backend's responsibility (`m:tuition_term_local`), not
+the renderer's.
+
+## Column width
+
+Column advance uses `tuition_width:width/1`, never the
+codepoint count: a wide (East-Asian / emoji) glyph occupies two columns. Its
+left cell holds the glyph and the cell to its right is a `wide_cont`
+placeholder that is never emitted on its own — it is painted by the two-wide
+glyph to its left. Overwriting either half of a wide glyph dissolves the
+orphaned half back to blank so the grid stays consistent. A wide glyph with
+no room for its right half in the final column is dropped, never stored. A
+lone zero-width cluster (a stray combining mark or ZWSP) is likewise dropped:
+it advances no column on the terminal, so storing it as a cell would leave
+the model's cursor a column ahead of the terminal's and desync the run. A
+malformed cluster wider than two columns is replaced with a single
+replacement character, so the column advance can never trail the emitted
+bytes for untrusted text.
+
+## Content safety
+
+A cell never stores a C0/C1 control codepoint (`0x00`–`0x1F`, `0x7F`–`0x9F`):
+drawing replaces it with a blank. Rendered content is routinely untrusted — a
+process name, a message, a stacktrace from an observed node — so a stray
+`ESC` or newline must never reach the terminal as a cursor move or the start
+of an escape sequence, which would desync the model or inject arbitrary
+terminal control.
+""".
 
 -include("tuition_term.hrl").
 -include("tuition_layout.hrl").
@@ -108,29 +109,37 @@
 
 %%% -- construction ----------------------------------------------------
 
-%% @doc A blank buffer covering a terminal size or a {@link //tuition/tuition_layout:rect()}.
-%%
-%% Every cell starts as the default blank ({@link //tuition/tuition_term} `#cell{}':
-%% a space with default colours). A rect's origin is ignored — a buffer always
-%% spans the whole terminal in absolute coordinates; draw into a sub-rect by
-%% passing its absolute origin to {@link put_text/4}.
+-doc """
+A blank buffer covering a terminal size or a `t:tuition_layout:rect/0`.
+
+Every cell starts as the default blank (`m:tuition_term` `#cell{}`:
+a space with default colours). A rect's origin is ignored — a buffer always
+spans the whole terminal in absolute coordinates; draw into a sub-rect by
+passing its absolute origin to `put_text/4`.
+""".
 -spec new(tuition_term:size() | #rect{}) -> buffer().
 new({Cols, Rows}) when is_integer(Cols), is_integer(Rows) ->
     #buf{w = max(0, Cols), h = max(0, Rows)};
 new(#rect{w = W, h = H}) ->
     #buf{w = W, h = H}.
 
-%% @doc The buffer's size in cells, as a {@link //tuition/tuition_term:size()} pair.
+-doc """
+The buffer's size in cells, as a `t:tuition_term:size/0` pair.
+""".
 -spec size(buffer()) -> {non_neg_integer(), non_neg_integer()}.
 size(#buf{w = W, h = H}) -> {W, H}.
 
-%% @doc A blank buffer of the same size — the starting point for the next frame.
+-doc """
+A blank buffer of the same size — the starting point for the next frame.
+""".
 -spec clear(buffer()) -> buffer().
 clear(#buf{w = W, h = H}) -> #buf{w = W, h = H}.
 
-%% @doc The effective cell at `{X, Y}': a `#cell{}' (the blank default when
-%% nothing was drawn there) or the `wide_cont' placeholder standing for the right
-%% half of a two-column glyph. For tests and introspection.
+-doc """
+The effective cell at `{X, Y}`: a `#cell{}` (the blank default when
+nothing was drawn there) or the `wide_cont` placeholder standing for the right
+half of a two-column glyph. For tests and introspection.
+""".
 -spec cell_at(buffer(), non_neg_integer(), non_neg_integer()) -> #cell{} | wide_cont.
 cell_at(Buf, X, Y) -> get_cell(Buf, X, Y).
 
@@ -144,47 +153,63 @@ cell_at(Buf, X, Y) -> get_cell(Buf, X, Y).
 %% width) is not exposed — it is filled in on placement and is not a caller
 %% concern.
 
-%% @doc Build an unstyled `#cell{}' for `Char' — default colours, no bold, no
-%% underline. See {@link cell/2} to style it. `Char' is a single codepoint or a
-%% grapheme-cluster codepoint list; it is sanitised (a control codepoint becomes
-%% a blank) only when the cell is placed by {@link put_cell/4}, not here.
+-doc """
+Build an unstyled `#cell{}` for `Char` — default colours, no bold, no
+underline. See `cell/2` to style it. `Char` is a single codepoint or a
+grapheme-cluster codepoint list; it is sanitised (a control codepoint becomes
+a blank) only when the cell is placed by `put_cell/4`, not here.
+""".
 -spec cell(char() | [char()]) -> #cell{}.
 cell(Char) -> cell(Char, #{}).
 
-%% @doc Build a `#cell{}' for `Char' with the given {@type style()} overlay —
-%% the same style map {@link put_text/5} takes, so a colour/attribute set carries
-%% across both paths. Omitted style keys take the cell defaults.
+-doc """
+Build a `#cell{}` for `Char` with the given `t:style/0` overlay —
+the same style map `put_text/5` takes, so a colour/attribute set carries
+across both paths. Omitted style keys take the cell defaults.
+""".
 -spec cell(char() | [char()], style()) -> #cell{}.
 cell(Char, Style) -> (style_cell(Style))#cell{char = Char}.
 
-%% @doc The cell's glyph: a single codepoint or a grapheme-cluster codepoint list.
+-doc """
+The cell's glyph: a single codepoint or a grapheme-cluster codepoint list.
+""".
 -spec char(#cell{}) -> char() | [char()].
 char(#cell{char = Ch}) -> Ch.
 
-%% @doc The cell's foreground colour.
+-doc """
+The cell's foreground colour.
+""".
 -spec fg(#cell{}) -> default | 0..255 | {rgb, byte(), byte(), byte()}.
 fg(#cell{fg = Fg}) -> Fg.
 
-%% @doc The cell's background colour.
+-doc """
+The cell's background colour.
+""".
 -spec bg(#cell{}) -> default | 0..255 | {rgb, byte(), byte(), byte()}.
 bg(#cell{bg = Bg}) -> Bg.
 
-%% @doc Whether the cell is bold.
+-doc """
+Whether the cell is bold.
+""".
 -spec bold(#cell{}) -> boolean().
 bold(#cell{bold = Bold}) -> Bold.
 
-%% @doc Whether the cell is underlined.
+-doc """
+Whether the cell is underlined.
+""".
 -spec underline(#cell{}) -> boolean().
 underline(#cell{underline = Under}) -> Under.
 
 %%% -- drawing ---------------------------------------------------------
 
-%% @doc Place one `#cell{}' at `{X, Y}', spanning one or two columns per its
-%% glyph's display width. A two-column glyph also marks `{X + 1, Y}' as
-%% `wide_cont'. Overwriting either half of an existing wide glyph blanks its
-%% orphaned half first, keeping the grid consistent. Out-of-bounds writes are
-%% ignored, a control codepoint is sanitised to a blank, and a wide glyph with no
-%% room for its right half in the final column is dropped rather than stored.
+-doc """
+Place one `#cell{}` at `{X, Y}`, spanning one or two columns per its
+glyph's display width. A two-column glyph also marks `{X + 1, Y}` as
+`wide_cont`. Overwriting either half of an existing wide glyph blanks its
+orphaned half first, keeping the grid consistent. Out-of-bounds writes are
+ignored, a control codepoint is sanitised to a blank, and a wide glyph with no
+room for its right half in the final column is dropped rather than stored.
+""".
 -spec put_cell(buffer(), integer(), integer(), #cell{}) -> buffer().
 put_cell(#buf{w = W, h = H} = Buf, X, Y, _Cell) when X < 0; Y < 0; X >= W; Y >= H ->
     Buf;
@@ -195,15 +220,19 @@ put_cell(#buf{w = W} = Buf, X, Y, #cell{char = Ch} = Cell0) ->
     Cell = Cell0#cell{char = sanitize_glyph(Ch)},
     put_row(Buf, Y, row_put_cell(get_row(Buf, Y), W, X, Cell)).
 
-%% @doc Draw `Text' from `{X, Y}' with default styling. See {@link put_text/5}.
+-doc """
+Draw `Text` from `{X, Y}` with default styling. See `put_text/5`.
+""".
 -spec put_text(buffer(), integer(), integer(), unicode:chardata()) -> buffer().
 put_text(Buf, X, Y, Text) -> put_text(Buf, X, Y, Text, #{}).
 
-%% @doc Draw `Text' left-to-right from `{X, Y}', advancing the write column by
-%% each grapheme cluster's display width (so a wide glyph consumes two columns).
-%% Text is clipped at the right edge — a run that would overflow, or a wide glyph
-%% with only one column of room, stops the draw — and a row outside the buffer
-%% draws nothing. `Style' overlays colours/attributes onto every cell drawn.
+-doc """
+Draw `Text` left-to-right from `{X, Y}`, advancing the write column by
+each grapheme cluster's display width (so a wide glyph consumes two columns).
+Text is clipped at the right edge — a run that would overflow, or a wide glyph
+with only one column of room, stops the draw — and a row outside the buffer
+draws nothing. `Style` overlays colours/attributes onto every cell drawn.
+""".
 -spec put_text(buffer(), integer(), integer(), unicode:chardata(), style()) -> buffer().
 put_text(#buf{h = H} = Buf, _X, Y, _Text, _Style) when Y < 0; Y >= H ->
     Buf;
@@ -248,13 +277,15 @@ draw_clusters(_GCs, _W, _X, Row, _Base) ->
 
 %%% -- diff / emit -----------------------------------------------------
 
-%% @doc ANSI to turn a terminal displaying `Prev' into one displaying `Next'.
-%%
-%% Both buffers are assumed to share the same geometry (on resize the caller
-%% starts from a fresh blank buffer). The result is `iodata()' ready for
-%% {@link //tuition/tuition_term:write/2}: empty when the frames are identical,
-%% otherwise the minimal cursor moves, SGR changes and glyph bytes for the
-%% changed cells, ending at default SGR.
+-doc """
+ANSI to turn a terminal displaying `Prev` into one displaying `Next`.
+
+Both buffers are assumed to share the same geometry (on resize the caller
+starts from a fresh blank buffer). The result is `iodata()` ready for
+`tuition_term:write/2`: empty when the frames are identical,
+otherwise the minimal cursor moves, SGR changes and glyph bytes for the
+changed cells, ending at default SGR.
+""".
 -spec diff(buffer(), buffer()) -> iodata().
 diff(Prev, #buf{w = W, h = H} = Next) ->
     {Style, Rev} = diff_rows(0, H, W, Prev, Next, none, default_sgr(), []),

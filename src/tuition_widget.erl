@@ -1,57 +1,54 @@
-%%%-------------------------------------------------------------------
-%%% @doc The widget seam — ratatui's third layer, above render and layout.
-%%%
-%%% Sonde already has ratatui's first two layers: the cell {@type
-%%% tuition_render:buffer()} with diff-based repaint ({@link tuition_render}) and the
-%%% constraint/split {@type tuition_layout:rect()} engine ({@link tuition_layout}).
-%%% This module is the third — a widget behaviour — and the small drawing
-%%% vocabulary widgets share (PRD §6/§8). Nothing above this seam touches raw
-%%% cells: a pane is composed from widgets, each drawing itself into a rect.
-%%%
-%%% == The seam ==
-%%% A widget is a module implementing the {@link render/3} callback:
-%%% <pre>
-%%%   render(Config, Area :: #rect{}, Buf :: buffer()) -> buffer()
-%%% </pre>
-%%% `Config' is the widget's content and styling (the "self" a ratatui widget
-%%% carries), `Area' is the {@link tuition_layout} rect it must confine itself to,
-%%% and it returns the buffer with its cells drawn in — composing with the diff
-%%% renderer exactly as a bare {@link tuition_render:put_text/5} would. {@link
-%%% render/4} dispatches through the behaviour so a caller can render any widget
-%%% uniformly by module. The stateless widgets — {@link tuition_block}, {@link
-%%% tuition_paragraph}, {@link tuition_gauge}, {@link tuition_line_gauge}, {@link
-%%% tuition_sparkline}, {@link tuition_barchart}, {@link tuition_chart}, {@link
-%%% tuition_canvas}, {@link tuition_tabs}, {@link tuition_clear}, {@link
-%%% tuition_spinner} and {@link tuition_scrollbar} — implement this callback.
-%%%
-%%% == Stateful widgets ==
-%%% A selection index or scroll offset cannot live inside the widget: the
-%%% immediate-mode renderer rebuilds every frame from scratch and discards the
-%%% buffer, so nothing a stateless `render/3' stored would survive. A stateful
-%%% widget ({@link tuition_list}, {@link tuition_table}, {@link tuition_tree},
-%%% {@link tuition_scrollview} and {@link tuition_input_field}) instead takes that
-%%% state as an explicit argument and returns the updated value:
-%%% <pre>
-%%%   render(Config, Area, Buf, State) -> {buffer(), State}
-%%% </pre>
-%%% The state (see `include/tuition_widget.hrl') lives in the application/UI state
-%%% and is threaded by the caller across frames. This is ratatui's `StatefulWidget'
-%%% split, made explicit because Erlang has no `&mut'.
-%%%
-%%% == Clipping is the widget's job ==
-%%% {@link tuition_render:put_text/5} clips a run at the *buffer's* right edge, not
-%%% at an arbitrary rect's. A widget confined to `Area' must not spill past
-%%% `Area's right edge onto a neighbouring pane, so the shared {@link put_line/6}
-%%% truncates text to the columns `Area' actually offers before drawing —
-%%% measuring each grapheme cluster the way {@link tuition_render} will render it
-%%% (so a control byte counts as the blank it becomes and a wide glyph as two
-%%% columns), so the widget's clip and the renderer's never disagree.
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_widget).
+-moduledoc """
+The widget seam — ratatui's third layer, above render and layout.
+
+The framework already has ratatui's first two layers: the cell `t:tuition_render:buffer/0` with diff-based repaint (`m:tuition_render`) and the
+constraint/split `t:tuition_layout:rect/0` engine (`m:tuition_layout`).
+This module is the third — a widget behaviour — and the small drawing
+vocabulary widgets share. Nothing above this seam touches raw
+cells: a pane is composed from widgets, each drawing itself into a rect.
+
+## The seam
+
+A widget is a module implementing the `render/3` callback:
+
+```
+render(Config, Area:: #rect{}, Buf:: buffer()) -> buffer()
+```
+
+`Config` is the widget's content and styling (the "self" a ratatui widget
+carries), `Area` is the `m:tuition_layout` rect it must confine itself to,
+and it returns the buffer with its cells drawn in — composing with the diff
+renderer exactly as a bare `tuition_render:put_text/5` would. `render/4` dispatches through the behaviour so a caller can render any widget
+uniformly by module. The stateless widgets — `m:tuition_block`, `m:tuition_paragraph`, `m:tuition_gauge`, `m:tuition_line_gauge`, `m:tuition_sparkline`, `m:tuition_barchart`, `m:tuition_chart`, `m:tuition_canvas`, `m:tuition_tabs`, `m:tuition_clear`, `m:tuition_spinner` and `m:tuition_scrollbar` — implement this callback.
+
+## Stateful widgets
+
+A selection index or scroll offset cannot live inside the widget: the
+immediate-mode renderer rebuilds every frame from scratch and discards the
+buffer, so nothing a stateless `render/3` stored would survive. A stateful
+widget (`m:tuition_list`, `m:tuition_table`, `m:tuition_tree`,
+`m:tuition_scrollview` and `m:tuition_input_field`) instead takes that
+state as an explicit argument and returns the updated value:
+
+```
+render(Config, Area, Buf, State) -> {buffer(), State}
+```
+
+The state (see `include/tuition_widget.hrl`) lives in the application/UI state
+and is threaded by the caller across frames. This is ratatui's `StatefulWidget`
+split, made explicit because Erlang has no `&mut`.
+
+## Clipping is the widget's job
+
+`tuition_render:put_text/5` clips a run at the *buffer's* right edge, not
+at an arbitrary rect's. A widget confined to `Area` must not spill past
+`Area`s right edge onto a neighbouring pane, so the shared `put_line/6`
+truncates text to the columns `Area` actually offers before drawing —
+measuring each grapheme cluster the way `m:tuition_render` will render it
+(so a control byte counts as the blank it becomes and a wide glyph as two
+columns), so the widget's clip and the renderer's never disagree.
+""".
 
 -include("tuition_layout.hrl").
 
@@ -65,24 +62,26 @@
 
 %%% -- seam dispatch ---------------------------------------------------
 
-%% @doc Render a stateless widget `Mod' through the behaviour: `Mod:render(Config,
-%% Area, Buf)'. Lets a caller composite any widget uniformly by module, which is
-%% the point of the seam. Stateful widgets are rendered through their own
-%% `render/4' ({@link tuition_list:render/4}) instead — they return updated state.
+-doc """
+Render a stateless widget `Mod` through the behaviour: `Mod:render(Config, Area, Buf)`. Lets a caller composite any widget uniformly by module, which is
+the point of the seam. Stateful widgets are rendered through their own
+`render/4` (`tuition_list:render/4`) instead — they return updated state.
+""".
 -spec render(module(), term(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(Mod, Config, Area, Buf) ->
     Mod:render(Config, Area, Buf).
 
 %%% -- shared drawing helpers ------------------------------------------
 
-%% @doc Fill every cell of `Area' with a space in `Style' — the styled background
-%% a {@link tuition_block} paints behind its content, or the highlight bar a {@link
-%% tuition_list} lays under its selected row. A degenerate rect (no columns or rows)
-%% draws nothing. An empty style paints no background: the region is left
-%% untouched so whatever it composites over — a parent block's background — shows
-%% through, rather than being overwritten with default-blank cells. (Painting a
-%% *styled* space is not a blank, so a non-empty style does overwrite, which is
-%% what makes a configured background actually cover the parent.)
+-doc """
+Fill every cell of `Area` with a space in `Style` — the styled background
+a `m:tuition_block` paints behind its content, or the highlight bar a `m:tuition_list` lays under its selected row. A degenerate rect (no columns or rows)
+draws nothing. An empty style paints no background: the region is left
+untouched so whatever it composites over — a parent block's background — shows
+through, rather than being overwritten with default-blank cells. (Painting a
+*styled* space is not a blank, so a non-empty style does overwrite, which is
+what makes a configured background actually cover the parent.)
+""".
 -spec fill(tuition_render:buffer(), #rect{}, tuition_render:style()) -> tuition_render:buffer().
 fill(Buf, _Area, Style) when map_size(Style) =:= 0 ->
     Buf;
@@ -96,11 +95,13 @@ fill(Buf, #rect{x = X, y = Y, w = W, h = H}, Style) ->
         lists:seq(0, H - 1)
     ).
 
-%% @doc Draw one line of `Text' within `Area', at the `Area'-relative column
-%% `DCol' and row `DRow', clipped to `Area': a row outside `[0, H)' or a column
-%% outside `[0, W)' draws nothing, and the text is truncated to the columns
-%% remaining to `Area's right edge (`W - DCol') so it can never spill past the
-%% widget's region onto a neighbour. `Style' is overlaid on every cell drawn.
+-doc """
+Draw one line of `Text` within `Area`, at the `Area`-relative column
+`DCol` and row `DRow`, clipped to `Area`: a row outside `[0, H)` or a column
+outside `[0, W)` draws nothing, and the text is truncated to the columns
+remaining to `Area`s right edge (`W - DCol`) so it can never spill past the
+widget's region onto a neighbour. `Style` is overlaid on every cell drawn.
+""".
 -spec put_line(
     tuition_render:buffer(),
     #rect{},
@@ -117,25 +118,29 @@ put_line(Buf, #rect{x = X, y = Y, w = W}, DCol, DRow, Text, Style) ->
     Clipped = truncate(Text, W - DCol),
     tuition_render:put_text(Buf, X + DCol, Y + DRow, Clipped, Style).
 
-%% @doc The left offset, in columns, that places `Width' columns of content within
-%% an `Avail'-wide span under `Align'. Never negative — content already as wide as
-%% (or wider than) the span sits flush left. Shared by every widget that aligns
-%% text within a rect (a block title, a paragraph line).
+-doc """
+The left offset, in columns, that places `Width` columns of content within
+an `Avail`-wide span under `Align`. Never negative — content already as wide as
+(or wider than) the span sits flush left. Shared by every widget that aligns
+text within a rect (a block title, a paragraph line).
+""".
 -spec align_offset(left | center | right, non_neg_integer(), non_neg_integer()) ->
     non_neg_integer().
 align_offset(left, _Avail, _Width) -> 0;
 align_offset(center, Avail, Width) -> max(0, (Avail - Width) div 2);
 align_offset(right, Avail, Width) -> max(0, Avail - Width).
 
-%% @doc Display width of a whole string in terminal columns, measured the way the
-%% widget layer actually renders it — each grapheme cluster via the same
-%% sanitise-aware accounting {@link truncate/2} uses (a C0/C1 control counts as
-%% the one-column blank it becomes, a malformed over-wide cluster as one, a wide
-%% glyph as two). Use this, not {@link tuition_width:swidth/1}, whenever the width
-%% must agree with {@link put_line/6}'s clip and {@link tuition_render}'s cursor
-%% advance — e.g. to align text that may carry control bytes from untrusted
-%% content, where the raw width would under-count the controls and misplace the
-%% run.
+-doc """
+Display width of a whole string in terminal columns, measured the way the
+widget layer actually renders it — each grapheme cluster via the same
+sanitise-aware accounting `truncate/2` uses (a C0/C1 control counts as
+the one-column blank it becomes, a malformed over-wide cluster as one, a wide
+glyph as two). Use this, not `tuition_width:swidth/1`, whenever the width
+must agree with `put_line/6`'s clip and `m:tuition_render`'s cursor
+advance — e.g. to align text that may carry control bytes from untrusted
+content, where the raw width would under-count the controls and misplace the
+run.
+""".
 -spec display_width(unicode:chardata()) -> non_neg_integer().
 display_width(Text) ->
     sum_cols(string:next_grapheme(to_bin(Text)), 0).
@@ -146,19 +151,21 @@ sum_cols([GC | Rest], Acc) when is_integer(GC); is_list(GC) ->
 sum_cols(_Done, Acc) ->
     Acc.
 
-%% @doc The longest grapheme-cluster prefix of `Text' whose display width is at
-%% most `MaxCols' columns. Stops before the first cluster that would overflow —
-%% including a wide (two-column) cluster with only one column left — mirroring how
-%% {@link tuition_render} clips a run at the buffer's right edge, so a widget's own
-%% clip and the renderer's advance agree cell for cell.
-%%
-%% Width is measured the way {@link tuition_render} will actually render each
-%% cluster, not by the raw {@link tuition_width:width/1}: a C0/C1 control base
-%% becomes a one-column blank and a malformed over-wide cluster a one-column
-%% replacement char, so a control or garbage byte in untrusted content is
-%% budgeted for the column it will occupy rather than the zero {@link tuition_width}
-%% assigns it — otherwise the clip could trail the emitted bytes and let the tail
-%% spill one cell past `Area'.
+-doc """
+The longest grapheme-cluster prefix of `Text` whose display width is at
+most `MaxCols` columns. Stops before the first cluster that would overflow —
+including a wide (two-column) cluster with only one column left — mirroring how
+`m:tuition_render` clips a run at the buffer's right edge, so a widget's own
+clip and the renderer's advance agree cell for cell.
+
+Width is measured the way `m:tuition_render` will actually render each
+cluster, not by the raw `tuition_width:width/1`: a C0/C1 control base
+becomes a one-column blank and a malformed over-wide cluster a one-column
+replacement char, so a control or garbage byte in untrusted content is
+budgeted for the column it will occupy rather than the zero `m:tuition_width`
+assigns it — otherwise the clip could trail the emitted bytes and let the tail
+spill one cell past `Area`.
+""".
 -spec truncate(unicode:chardata(), integer()) -> binary().
 truncate(_Text, MaxCols) when MaxCols =< 0 ->
     <<>>;
@@ -185,15 +192,17 @@ finish(Acc) ->
         _ -> <<>>
     end.
 
-%% @doc Split `Text' into a head of at most `MaxCols' columns and the remaining
-%% bytes, measured the way {@link truncate/2} does — a control counts as the
-%% one-column blank it renders as, a wide glyph as two. Unlike {@link truncate/2}
-%% it always takes at least one grapheme cluster when `Text' is non-empty, so a
-%% caller hard-splitting an over-wide run (a single wide glyph against a one-column
-%% budget) still makes progress instead of looping; {@link put_line/6}'s own clip
-%% drops the one-column overflow at draw time. Returns `{Head, Rest}' as UTF-8
-%% binaries. This is the width-safe word-wrap primitive {@link tuition_paragraph}
-%% hard-splits with, so its wrap decisions match what the renderer draws.
+-doc """
+Split `Text` into a head of at most `MaxCols` columns and the remaining
+bytes, measured the way `truncate/2` does — a control counts as the
+one-column blank it renders as, a wide glyph as two. Unlike `truncate/2`
+it always takes at least one grapheme cluster when `Text` is non-empty, so a
+caller hard-splitting an over-wide run (a single wide glyph against a one-column
+budget) still makes progress instead of looping; `put_line/6`'s own clip
+drops the one-column overflow at draw time. Returns `{Head, Rest}` as UTF-8
+binaries. This is the width-safe word-wrap primitive `m:tuition_paragraph`
+hard-splits with, so its wrap decisions match what the renderer draws.
+""".
 -spec split(unicode:chardata(), non_neg_integer()) -> {binary(), binary()}.
 split(Text, MaxCols) ->
     split_walk(to_bin(Text), MaxCols, 0, []).

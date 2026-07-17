@@ -1,74 +1,72 @@
-%%%-------------------------------------------------------------------
-%%% @doc Tabs widget — a horizontal row of titles with one selected (stateless).
-%%%
-%%% A tab-bar draws a single row of titles separated by a divider glyph and
-%%% highlights the selected one, so a multi-pane UI can *show* the panes it can
-%%% switch between and which has focus. It is the ratatui `Tabs': {@link
-%%% tuition_shell} already cycles panes with Tab, but nothing on screen names the
-%%% available panes or marks the focused one — a tab-bar makes that navigation
-%%% visible, and its 0-based `selected' index is a natural fit with the shell's
-%%% existing focus model.
-%%%
-%%% == Stateless ==
-%%% The tab-bar holds nothing between frames: which tab is selected is already
-%%% tracked by whatever owns the panes (the shell's focused-pane index), so the
-%%% caller passes it in as `selected' each frame. It implements the plain {@link
-%%% tuition_widget} `render/3' callback — nothing is threaded across the
-%%% immediate-mode rebuild.
-%%%
-%%% == Layout ==
-%%% Titles are drawn along the top row of `Area', left to right, each surrounded
-%%% by `padding' blank columns, with a `divider' glyph between adjacent titles:
-%%% <pre>
-%%%  │ pane a │ pane b │ pane c │
-%%% </pre>
-%%% The whole strip is aligned within `Area' by `title_align' — flush left by
-%%% default, or centred/right when the titles are narrower than the area. Give the
-%%% widget a one-row strip (reserve it with {@link tuition_layout}, typically at
-%%% the top of a pane); a taller area is filled with the base `style' but the
-%%% titles sit on its first row.
-%%%
-%%% == Overflow ==
-%%% The row is clipped to `Area': when the titles are wider than the area the tail
-%%% is truncated at the right edge (a wide glyph straddling the edge is dropped
-%%% whole, never split), matching how {@link tuition_render} clips any run. Keep
-%%% the leading tabs visible by ordering them so the selected pane is not pushed
-%%% off the end, or size the strip to the titles.
-%%%
-%%% == Config ==
-%%% A `#{}' map, every key optional:
-%%% <ul>
-%%%   <li>`titles' — the tab titles, a list of chardata (default `[]', an empty
-%%%       bar).</li>
-%%%   <li>`selected' — the 0-based index of the highlighted tab (default `0'). An
-%%%       index outside `[0, length(titles))' highlights nothing, so an empty bar
-%%%       or a stale index simply draws every title in the base style.</li>
-%%%   <li>`style' — the base style for the whole bar: the background fill and the
-%%%       style of the unselected titles and the dividers (default: unstyled, so
-%%%       the bar is transparent over whatever it is drawn onto).</li>
-%%%   <li>`highlight_style' — the selected title's style, overlaid on `style' (so
-%%%       it need only name the keys that differ); default unstyled, i.e. the
-%%%       selected title looks like the rest until this is set.</li>
-%%%   <li>`divider' — the glyph drawn between adjacent titles (default `│').</li>
-%%%   <li>`padding' — columns of space on each side of every title (default `1',
-%%%       clamped at `0'). Like the rest of the bar these follow `style': painted
-%%%       with the base fill when it is set, and left transparent — showing the
-%%%       parent background (or whatever the bar is drawn over) — when it is not.
-%%%       They are never overwritten with default-blank cells, so an unstyled bar
-%%%       composes cleanly over a parent block's coloured strip, matching {@link
-%%%       tuition_widget:fill/3}.</li>
-%%%   <li>`title_align' — `left' (default) | `center' | `right', where the strip
-%%%       sits within `Area' when it is narrower than the area.</li>
-%%% </ul>
-%%%
-%%% Only the selected title's glyphs carry `highlight_style'; the padding around
-%%% it keeps the base style, matching ratatui's per-title highlight.
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_tabs).
+-moduledoc """
+Tabs widget — a horizontal row of titles with one selected (stateless).
+
+A tab-bar draws a single row of titles separated by a divider glyph and
+highlights the selected one, so a multi-pane UI can *show* the panes it can
+switch between and which has focus. It is the ratatui `Tabs`: `m:tuition_shell` already cycles panes with Tab, but nothing on screen names the
+available panes or marks the focused one — a tab-bar makes that navigation
+visible, and its 0-based `selected` index is a natural fit with the shell's
+existing focus model.
+
+## Stateless
+
+The tab-bar holds nothing between frames: which tab is selected is already
+tracked by whatever owns the panes (the shell's focused-pane index), so the
+caller passes it in as `selected` each frame. It implements the plain `m:tuition_widget` `render/3` callback — nothing is threaded across the
+immediate-mode rebuild.
+
+## Layout
+
+Titles are drawn along the top row of `Area`, left to right, each surrounded
+by `padding` blank columns, with a `divider` glyph between adjacent titles:
+
+```
+│ pane a │ pane b │ pane c │
+```
+
+The whole strip is aligned within `Area` by `title_align` — flush left by
+default, or centred/right when the titles are narrower than the area. Give the
+widget a one-row strip (reserve it with `m:tuition_layout`, typically at
+the top of a pane); a taller area is filled with the base `style` but the
+titles sit on its first row.
+
+## Overflow
+
+The row is clipped to `Area`: when the titles are wider than the area the tail
+is truncated at the right edge (a wide glyph straddling the edge is dropped
+whole, never split), matching how `m:tuition_render` clips any run. Keep
+the leading tabs visible by ordering them so the selected pane is not pushed
+off the end, or size the strip to the titles.
+
+## Config
+
+A `#{}` map, every key optional:
+
+- `titles` — the tab titles, a list of chardata (default `[]`, an empty
+  bar).
+- `selected` — the 0-based index of the highlighted tab (default `0`). An
+  index outside `[0, length(titles))` highlights nothing, so an empty bar
+  or a stale index simply draws every title in the base style.
+- `style` — the base style for the whole bar: the background fill and the
+  style of the unselected titles and the dividers (default: unstyled, so
+  the bar is transparent over whatever it is drawn onto).
+- `highlight_style` — the selected title's style, overlaid on `style` (so
+  it need only name the keys that differ); default unstyled, i.e. the
+  selected title looks like the rest until this is set.
+- `divider` — the glyph drawn between adjacent titles (default `│`).
+- `padding` — columns of space on each side of every title (default `1`,
+  clamped at `0`). Like the rest of the bar these follow `style`: painted
+  with the base fill when it is set, and left transparent — showing the
+  parent background (or whatever the bar is drawn over) — when it is not.
+  They are never overwritten with default-blank cells, so an unstyled bar
+  composes cleanly over a parent block's coloured strip, matching `tuition_widget:fill/3`.
+- `title_align` — `left` (default) | `center` | `right`, where the strip
+  sits within `Area` when it is narrower than the area.
+
+Only the selected title's glyphs carry `highlight_style`; the padding around
+it keeps the base style, matching ratatui's per-title highlight.
+""".
 -behaviour(tuition_widget).
 
 -include("tuition_layout.hrl").
@@ -100,8 +98,10 @@
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Draw the tab-bar into `Area'. A degenerate area (no columns or rows)
-%% draws nothing. See the module doc for the config map.
+-doc """
+Draw the tab-bar into `Area`. A degenerate area (no columns or rows)
+draws nothing. See the module doc for the config map.
+""".
 -spec render(tabs(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Cfg, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;

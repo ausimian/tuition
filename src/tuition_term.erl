@@ -1,20 +1,19 @@
-%%%-------------------------------------------------------------------
-%%% @doc Terminal backend behaviour — the mandatory pluggable seam.
-%%%
-%%% This is the seam PRD §6/§11 require "from day one": it separates the
-%%% renderer/layout/widgets (which sit above it) from the transport that
-%%% actually carries keystrokes and rendered frames (which sits below it).
-%%% A local raw-mode tty ({@link tuition_term_local}, Modes 1-3), an SSH channel
-%%% pty ({@link tuition_ssh_cli} / {@link tuition_term_ssh}, Mode 4), and the
-%%% scripted test backend ({@link tuition_loop_term}) are interchangeable
-%%% implementations. Nothing above this seam may branch on which backend is in
-%%% use.
-%%%
-%%% A backend is addressed through an opaque {Backend, State} handle; the
-%%% dispatch helpers below hide that from callers.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_term).
+-moduledoc """
+Terminal backend behaviour — the mandatory pluggable seam.
+
+This is the seam, required from day one, that separates the
+renderer/layout/widgets (which sit above it) from the transport that
+actually carries keystrokes and rendered frames (which sits below it).
+A local raw-mode tty (`m:tuition_term_local`), an SSH channel
+pty (`m:tuition_ssh_cli` / `m:tuition_term_ssh`), and the
+scripted test backend (`m:tuition_loop_term`) are interchangeable
+implementations. Nothing above this seam may branch on which backend is in
+use.
+
+A backend is addressed through an opaque {Backend, State} handle; the
+dispatch helpers below hide that from callers.
+""".
 
 -export([open/2, write/2, read/2, size/1, close/1]).
 

@@ -1,67 +1,67 @@
-%%%-------------------------------------------------------------------
-%%% @doc ScrollView widget — a window onto oversized virtual content (stateful).
-%%%
-%%% A scroll view hosts content larger than the area it is given and pans a window
-%%% over it, so a pane can render into a big virtual buffer and scroll it in both
-%%% axes. It is the general "content bigger than the box, scroll it" primitive the
-%%% ratatui `tui-scrollview' crate provides: today each scrollable widget
-%%% (`tuition_list', `tuition_table', `tuition_paragraph') carries its own offset and
-%%% confines its drawing to its rect, and there is no shared way to draw arbitrary
-%%% content off-screen and scroll a window across it.
-%%%
-%%% == How it works ==
-%%% The caller declares a `content_size' — the `{W, H}' virtual extent — and paints
-%%% that whole extent, either by giving a `draw' fun that fills a fresh
-%%% content-sized buffer or by handing over a pre-built buffer. {@link render/4}
-%%% then blits the `Area'-sized window at the current `{x_offset, y_offset}' into
-%%% the visible rect, cell by cell, clipping at the content edges. A window narrower
-%%% or shorter than the content shows a slice; scrolling moves which slice.
-%%%
-%%% Wide (two-column) glyphs are handled at the window edges: a glyph whose right
-%%% half would fall outside the window — because the window starts in the middle of
-%%% it, or it sits against the right edge — is dropped to a blank rather than shown
-%%% as a stray half, so the visible slice never spills a column past the viewport or
-%%% strands an orphaned continuation cell.
-%%%
-%%% == Stateful, by necessity ==
-%%% The `{x_offset, y_offset}' live in a `#scrollview_state{}' (see
-%%% `include/tuition_widget.hrl') held by the *caller*, not in this module — the
-%%% renderer is immediate-mode and discards every frame (see {@link tuition_widget}).
-%%% {@link render/4} takes the state and returns it with both offsets clamped to the
-%%% scrollable range for the current content and viewport, so a window left past the
-%%% edge by shrunk content or a grown pane is pulled back into range. Scrolling is a
-%%% pure state transition the caller applies to input:
-%%% <pre>
-%%%   State1 = tuition_scrollview:scroll_by(State0, 0, 1),   %% on Down
-%%%   {Buf1, State2} = tuition_scrollview:render(Cfg, Area, Buf0, State1).
-%%% </pre>
-%%%
-%%% == Scrollbars ==
-%%% `scrollbars' composes {@link tuition_scrollbar} onto the edges: `vertical' takes
-%%% the rightmost column, `horizontal' the bottom row, `both' takes both (the
-%%% content window shrinks to make room). Each bar's `content_length' /
-%%% `viewport_length' / `position' are derived from the content size, the viewport
-%%% size and the offsets, so the thumbs track the window automatically. An optional
-%%% `scrollbar_opts' map supplies styles/glyphs for the bars (its geometry keys are
-%%% always overridden by the derived values).
-%%%
-%%% == Config ==
-%%% A `#{}' map:
-%%% <ul>
-%%%   <li>`content_size' — the `{W, H}' virtual extent (default `{0, 0}').</li>
-%%%   <li>`draw' — a fun `(ContentBuf) -> ContentBuf' painting the virtual content,
-%%%       or a pre-built `tuition_render:buffer()' of the content size. Absent, the
-%%%       content is blank.</li>
-%%%   <li>`scrollbars' — `none' (default) | `vertical' | `horizontal' | `both'.</li>
-%%%   <li>`scrollbar_opts' — a {@link tuition_scrollbar} config for styling the bars
-%%%       (default `#{}'); the orientation/length/position keys are derived and win.</li>
-%%% </ul>
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_scrollview).
+-moduledoc """
+ScrollView widget — a window onto oversized virtual content (stateful).
+
+A scroll view hosts content larger than the area it is given and pans a window
+over it, so a pane can render into a big virtual buffer and scroll it in both
+axes. It is the general "content bigger than the box, scroll it" primitive the
+ratatui `tui-scrollview` crate provides: today each scrollable widget
+(`tuition_list`, `tuition_table`, `tuition_paragraph`) carries its own offset and
+confines its drawing to its rect, and there is no shared way to draw arbitrary
+content off-screen and scroll a window across it.
+
+## How it works
+
+The caller declares a `content_size` — the `{W, H}` virtual extent — and paints
+that whole extent, either by giving a `draw` fun that fills a fresh
+content-sized buffer or by handing over a pre-built buffer. `render/4`
+then blits the `Area`-sized window at the current `{x_offset, y_offset}` into
+the visible rect, cell by cell, clipping at the content edges. A window narrower
+or shorter than the content shows a slice; scrolling moves which slice.
+
+Wide (two-column) glyphs are handled at the window edges: a glyph whose right
+half would fall outside the window — because the window starts in the middle of
+it, or it sits against the right edge — is dropped to a blank rather than shown
+as a stray half, so the visible slice never spills a column past the viewport or
+strands an orphaned continuation cell.
+
+## Stateful, by necessity
+
+The `{x_offset, y_offset}` live in a `#scrollview_state{}` (see
+`include/tuition_widget.hrl`) held by the *caller*, not in this module — the
+renderer is immediate-mode and discards every frame (see `m:tuition_widget`).
+`render/4` takes the state and returns it with both offsets clamped to the
+scrollable range for the current content and viewport, so a window left past the
+edge by shrunk content or a grown pane is pulled back into range. Scrolling is a
+pure state transition the caller applies to input:
+
+```
+State1 = tuition_scrollview:scroll_by(State0, 0, 1), %% on Down
+{Buf1, State2} = tuition_scrollview:render(Cfg, Area, Buf0, State1).
+```
+
+## Scrollbars
+
+`scrollbars` composes `m:tuition_scrollbar` onto the edges: `vertical` takes
+the rightmost column, `horizontal` the bottom row, `both` takes both (the
+content window shrinks to make room). Each bar's `content_length` /
+`viewport_length` / `position` are derived from the content size, the viewport
+size and the offsets, so the thumbs track the window automatically. An optional
+`scrollbar_opts` map supplies styles/glyphs for the bars (its geometry keys are
+always overridden by the derived values).
+
+## Config
+
+A `#{}` map:
+
+- `content_size` — the `{W, H}` virtual extent (default `{0, 0}`).
+- `draw` — a fun `(ContentBuf) -> ContentBuf` painting the virtual content,
+  or a pre-built `tuition_render:buffer()` of the content size. Absent, the
+  content is blank.
+- `scrollbars` — `none` (default) | `vertical` | `horizontal` | `both`.
+- `scrollbar_opts` — a `m:tuition_scrollbar` config for styling the bars
+  (default `#{}`); the orientation/length/position keys are derived and win.
+""".
 
 -include("tuition_layout.hrl").
 -include("tuition_term.hrl").
@@ -83,43 +83,53 @@
 
 %%% -- state -----------------------------------------------------------
 
-%% @doc A fresh scroll-view state: the window at the content's top-left corner.
+-doc """
+A fresh scroll-view state: the window at the content's top-left corner.
+""".
 -spec new() -> state().
 new() -> #scrollview_state{}.
 
-%% @doc The virtual content size as a rect at the origin — the dimensions of the
-%% buffer the content is painted into. A convenience for a caller that pre-builds
-%% the content buffer itself (rather than passing a `draw' fun) and needs its size.
+-doc """
+The virtual content size as a rect at the origin — the dimensions of the
+buffer the content is painted into. A convenience for a caller that pre-builds
+the content buffer itself (rather than passing a `draw` fun) and needs its size.
+""".
 -spec size(scrollview_cfg()) -> #rect{}.
 size(Cfg) ->
     {W, H} = maps:get(content_size, Cfg, {0, 0}),
     #rect{x = 0, y = 0, w = W, h = H}.
 
-%% @doc The current window offset as `{X, Y}' (columns from the left, rows from the
-%% top of the content).
+-doc """
+The current window offset as `{X, Y}` (columns from the left, rows from the
+top of the content).
+""".
 -spec offset(state()) -> {non_neg_integer(), non_neg_integer()}.
 offset(#scrollview_state{x_offset = X, y_offset = Y}) -> {X, Y}.
 
-%% @doc Move the window to an absolute `{X, Y}' content offset. Negative values are
-%% floored at zero; the offset is clamped to the content extent at the next {@link
-%% render/4}, so a value momentarily past the end is harmless (matching how {@link
-%% tuition_list} defers its clamp to render time).
+-doc """
+Move the window to an absolute `{X, Y}` content offset. Negative values are
+floored at zero; the offset is clamped to the content extent at the next `render/4`, so a value momentarily past the end is harmless (matching how `m:tuition_list` defers its clamp to render time).
+""".
 -spec scroll_to(state(), integer(), integer()) -> state().
 scroll_to(State, X, Y) ->
     State#scrollview_state{x_offset = max(0, X), y_offset = max(0, Y)}.
 
-%% @doc Pan the window by `{DX, DY}' cells from its current offset, floored at
-%% zero. As with {@link scroll_to/3}, the upper clamp is applied at render time.
+-doc """
+Pan the window by `{DX, DY}` cells from its current offset, floored at
+zero. As with `scroll_to/3`, the upper clamp is applied at render time.
+""".
 -spec scroll_by(state(), integer(), integer()) -> state().
 scroll_by(#scrollview_state{x_offset = X, y_offset = Y} = State, DX, DY) ->
     State#scrollview_state{x_offset = max(0, X + DX), y_offset = max(0, Y + DY)}.
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Blit the scrolled window of the content into `Area', drawing any
-%% scrollbars, and return the buffer together with the reconciled state (offsets
-%% clamped to the scrollable range). A degenerate area draws nothing but still
-%% reconciles, so a resize to nothing and back leaves valid offsets behind.
+-doc """
+Blit the scrolled window of the content into `Area`, drawing any
+scrollbars, and return the buffer together with the reconciled state (offsets
+clamped to the scrollable range). A degenerate area draws nothing but still
+reconciles, so a resize to nothing and back leaves valid offsets behind.
+""".
 -spec render(scrollview_cfg(), #rect{}, tuition_render:buffer(), state()) ->
     {tuition_render:buffer(), state()}.
 render(Cfg, Area, Buf, State0) ->

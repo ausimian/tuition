@@ -1,24 +1,21 @@
-%%%-------------------------------------------------------------------
-%%% @doc SSH channel terminal backend.
-%%%
-%%% This backend is opened by {@link tuition_ssh_cli}, not directly by an
-%%% application. The SSH channel callback owns the channel process and acts as a
-%%% small broker between OTP ssh's asynchronous channel messages and the
-%%% pull-style {@link tuition_term} callbacks the shell already uses:
-%%%
-%%% <ul>
-%%%   <li>{@link read/2} waits for bytes delivered by SSH `data' messages.</li>
-%%%   <li>{@link write/2} sends rendered ANSI bytes over the SSH channel.</li>
-%%%   <li>{@link size/1} reads the latest pty/window-change size.</li>
-%%%   <li>{@link close/1} asks the channel to send eof/exit-status and stop.</li>
-%%% </ul>
-%%%
-%%% The shell and pane contracts are unchanged: a host selects this backend by
-%%% running the shell through {@link tuition_ssh_cli}, which injects the private
-%%% `ssh_channel' option during session startup.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_term_ssh).
+-moduledoc """
+SSH channel terminal backend.
+
+This backend is opened by `m:tuition_ssh_cli`, not directly by an
+application. The SSH channel callback owns the channel process and acts as a
+small broker between OTP ssh's asynchronous channel messages and the
+pull-style `m:tuition_term` callbacks the shell already uses:
+
+- `read/2` waits for bytes delivered by SSH `data` messages.
+- `write/2` sends rendered ANSI bytes over the SSH channel.
+- `size/1` reads the latest pty/window-change size.
+- `close/1` asks the channel to send eof/exit-status and stop.
+
+The shell and pane contracts are unchanged: a host selects this backend by
+running the shell through `m:tuition_ssh_cli`, which injects the private
+`ssh_channel` option during session startup.
+""".
 -behaviour(tuition_term).
 
 -export([open/1, write/2, read/2, size/1, close/1]).
@@ -34,12 +31,14 @@
 
 %%% -- tuition_term callbacks -----------------------------------------
 
+-doc false.
 -spec open(map()) -> {ok, state()} | {error, term()}.
 open(#{ssh_channel := Channel}) when is_pid(Channel) ->
     {ok, #st{channel = Channel}};
 open(_Opts) ->
     {error, missing_ssh_channel}.
 
+-doc false.
 -spec write(state(), iodata()) -> ok | {error, term()}.
 write(#st{channel = Channel}, Data) ->
     case to_binary(Data) of
@@ -47,14 +46,17 @@ write(#st{channel = Channel}, Data) ->
         {error, _} = Error -> Error
     end.
 
+-doc false.
 -spec read(state(), timeout()) -> {ok, binary()} | timeout | {error, term()}.
 read(#st{channel = Channel}, Timeout) ->
     call(Channel, {read, Timeout}, infinity).
 
+-doc false.
 -spec size(state()) -> {ok, tuition_term:size()} | {error, term()}.
 size(#st{channel = Channel}) ->
     call(Channel, size, infinity).
 
+-doc false.
 -spec close(state()) -> ok.
 close(#st{channel = Channel}) ->
     case call(Channel, close, ?CLOSE_TIMEOUT) of

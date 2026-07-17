@@ -1,38 +1,36 @@
-%%%-------------------------------------------------------------------
-%%% @doc "Hello, world" reference loop — the framework's smallest end-to-end
-%%% example, and the living exercise of the capability probe.
-%%%
-%%% This is the minimal immediate-mode loop a `tuition' consumer starts from: it
-%%% opens a pluggable {@link tuition_term} backend, probes its capabilities, and
-%%% paints a single "hello, world" pane, folding input and resize into the frame
-%%% each iteration. It began as the Phase 0 exit criterion (PRD §13, issue #8);
-%%% after the framework was split out it stays here as the reference demo and the
-%%% only place the caps-probe integration is exercised end-to-end. The full app
-%%% shell ({@link tuition_shell}) and the Sonde observer
-%%% (<a href="https://github.com/ausimian/sonde">github.com/ausimian/sonde</a>)
-%%% supersede it as the product entry points.
-%%%
-%%% == The render/input loop ==
-%%% {@link start/1} opens a terminal backend, probes its capabilities
-%%% ({@link tuition_caps}), paints a "hello, world" pane laid out by
-%%% {@link tuition_layout}, then runs an immediate-mode loop: each iteration polls
-%%% input through {@link tuition_input_driver}, folds the decoded events (keys,
-%%% mouse, paste) plus any terminal resize into the UI state, rebuilds the frame
-%%% with {@link tuition_render} and writes only the diff. It quits on `q' (or
-%%% Ctrl-C) and always restores the terminal via {@link tuition_term:close/1} — on a
-%%% clean quit or a read/write error alike — so the shell is left pristine.
-%%%
-%%% The probe runs once, right after the backend opens and before the first
-%%% frame, reading its replies off the same input channel the loop later uses.
-%%% Its result drives real output here: the pane is drawn in 24-bit colour on a
-%%% truecolor terminal and falls back to a 256-colour approximation otherwise,
-%%% and the status line names the enrichments the terminal reported. Because the
-%%% probe shares the input channel, any non-reply bytes it reads (a key pressed
-%%% during the probe window) are preserved and replayed as the loop's first input
-%%% rather than lost — so, e.g., a quick `q' against a silent terminal still quits.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_demo).
+-moduledoc """
+"Hello, world" reference loop — the framework's smallest end-to-end
+example, and the living exercise of the capability probe.
+
+This is the minimal immediate-mode loop a `tuition` consumer starts from: it
+opens a pluggable `m:tuition_term` backend, probes its capabilities, and
+paints a single "hello, world" pane, folding input and resize into the frame
+each iteration. It began as the first end-to-end example;
+after the framework was split out it stays here as the reference demo and the
+only place the caps-probe integration is exercised end-to-end. The full app
+shell (`m:tuition_shell`) supersedes it as the product entry point.
+
+## The render/input loop
+
+`start/1` opens a terminal backend, probes its capabilities
+(`m:tuition_caps`), paints a "hello, world" pane laid out by
+`m:tuition_layout`, then runs an immediate-mode loop: each iteration polls
+input through `m:tuition_input_driver`, folds the decoded events (keys,
+mouse, paste) plus any terminal resize into the UI state, rebuilds the frame
+with `m:tuition_render` and writes only the diff. It quits on `q` (or
+Ctrl-C) and always restores the terminal via `tuition_term:close/1` — on a
+clean quit or a read/write error alike — so the shell is left pristine.
+
+The probe runs once, right after the backend opens and before the first
+frame, reading its replies off the same input channel the loop later uses.
+Its result drives real output here: the pane is drawn in 24-bit colour on a
+truecolor terminal and falls back to a 256-colour approximation otherwise,
+and the status line names the enrichments the terminal reported. Because the
+probe shares the input channel, any non-reply bytes it reads (a key pressed
+during the probe window) are preserved and replayed as the loop's first input
+rather than lost — so, e.g., a quick `q` against a silent terminal still quits.
+""".
 
 -include("tuition_layout.hrl").
 -include("tuition_caps.hrl").
@@ -40,7 +38,7 @@
 -export([start/0, start/1]).
 
 %% How long a quiet input poll waits before looping to re-check the terminal
-%% size (resize is polled here, not signal-driven, in Phase 0). This is only a
+%% size (resize is polled here, not signal-driven). This is only a
 %% liveness cadence: an idle poll that finds nothing changed writes nothing,
 %% because the diff of an unchanged frame is empty.
 -define(IDLE_TIMEOUT, 1000).
@@ -52,11 +50,11 @@
 
 %% A loop-level event: either a decoded input event from the byte parser, or a
 %% terminal resize the loop synthesises when the polled size changes. Resize does
-%% not arrive through the byte stream (PRD §8), so it is folded in here rather
+%% not arrive through the byte stream, so it is folded in here rather
 %% than in {@link tuition_input}.
 -type ui_event() :: tuition_input:event() | {resize, tuition_term:size()}.
 
-%% Minimal Phase 0 UI state: the terminal capabilities probed at startup (which
+%% Minimal UI state: the terminal capabilities probed at startup (which
 %% style the frame) and the most recent event — key, mouse, paste or resize —
 %% echoed into the status line so the input -> parse -> render pipeline is visibly
 %% end-to-end. Later phases replace `last' with real view state; `caps' stays.
@@ -65,28 +63,32 @@
     last = none :: none | ui_event()
 }).
 
-%% @doc Start the demo against the local node, using the default local
-%% terminal backend. Blocks until the user quits; returns `ok' once the terminal
-%% has been restored, or `{error, Reason}' if the backend could not be opened
-%% (e.g. no controlling tty, or its geometry could not be read). A live
-%% `erl'/`iex' shell that already owns the tty is <em>not</em> a failure: the
-%% local backend borrows it through the current shell group in cooperative
-%% submode (see {@link tuition_term_local}).
+-doc """
+Start the demo against the local node, using the default local
+terminal backend. Blocks until the user quits; returns `ok` once the terminal
+has been restored, or `{error, Reason}` if the backend could not be opened
+(e.g. no controlling tty, or its geometry could not be read). A live
+`erl`/`iex` shell that already owns the tty is *not* a failure: the
+local backend borrows it through the current shell group in cooperative
+submode (see `m:tuition_term_local`).
+""".
 -spec start() -> ok | {error, term()}.
 start() -> start(#{}).
 
-%% @doc As {@link start/0}, with options. `backend' selects the terminal backend
-%% module (default {@link tuition_term_local}); the whole `Opts' map is passed
-%% through to the backend's `open/1', so a backend reads its own keys from it.
-%% Selecting a backend this way is also how the loop is driven in tests.
-%%
-%% Capability detection can be steered for a backend that cannot answer the
-%% interactive probe — an asynchronous or high-latency transport where the query
-%% round-trip overruns the read window (issue #16): `probe => false' skips the
-%% probe for the {@link tuition_caps:baseline/0} set, and `caps => Caps' supplies a
-%% fixed {@link tuition_caps:caps()} profile verbatim. Either way no terminal
-%% queries are written, so no stray reply can leak into input; the default (neither
-%% key) still probes. See {@link tuition_caps:resolve/2}.
+-doc """
+As `start/0`, with options. `backend` selects the terminal backend
+module (default `m:tuition_term_local`); the whole `Opts` map is passed
+through to the backend's `open/1`, so a backend reads its own keys from it.
+Selecting a backend this way is also how the loop is driven in tests.
+
+Capability detection can be steered for a backend that cannot answer the
+interactive probe — an asynchronous or high-latency transport where the query
+round-trip overruns the read window: `probe => false` skips the
+probe for the `tuition_caps:baseline/0` set, and `caps => Caps` supplies a
+fixed `t:tuition_caps:caps/0` profile verbatim. Either way no terminal
+queries are written, so no stray reply can leak into input; the default (neither
+key) still probes. See `tuition_caps:resolve/2`.
+""".
 -spec start(Opts :: map()) -> ok | {error, term()}.
 start(Opts) ->
     Backend = maps:get(backend, Opts, tuition_term_local),
@@ -172,7 +174,7 @@ probe_caps(Handle, Opts) ->
     {tuition_caps:apply_colorterm(os:getenv("COLORTERM"), Caps), Residue}.
 
 %% One iteration: poll input, re-query the terminal size (cheap, and the only
-%% resize signal in Phase 0), fold both the decoded events and any synthesised
+%% resize signal), fold both the decoded events and any synthesised
 %% resize event into the UI state, then repaint the diff. `Prev'/`PrevSize' are
 %% the baseline the next diff is measured against; `InputSt' carries any partial
 %% escape/UTF-8/paste sequence across reads.
@@ -207,7 +209,7 @@ loop(Handle, Prev, PrevSize, InputSt, Ui) ->
 
 %% Synthesise a resize event when the polled size differs from the previous
 %% iteration's — a structured `{resize, Size}' the loop consumes like any other
-%% event (PRD §8). No change yields no event, so a steady terminal is silent.
+%% event. No change yields no event, so a steady terminal is silent.
 -spec resize_events(tuition_term:size(), tuition_term:size()) -> [ui_event()].
 resize_events(Size, Size) -> [];
 resize_events(_PrevSize, Size) -> [{resize, Size}].
@@ -304,7 +306,7 @@ draw_status(Buf, #rect{x = X, y = Y}, Caps, Last) ->
 
 %% A space-separated list of the enrichments the probe turned on, or "baseline"
 %% when it found none — so the running app visibly reports what the terminal
-%% supports (PRD §8 acceptance).
+%% supports.
 -spec caps_tags(tuition_caps:caps()) -> string().
 caps_tags(#caps{
     truecolor = Tc,

@@ -1,133 +1,131 @@
-%%%-------------------------------------------------------------------
-%%% @doc Chart widget — time-series trend curves at sub-cell resolution.
-%%%
-%%% Where {@link tuition_sparkline} draws one block bar per sample (eight vertical
-%%% levels, one column wide), a chart plots its samples as continuous curves on a
-%%% {@link tuition_braille} grid — 4× the vertical and 2× the horizontal resolution per cell
-%%% — so a BEAM trend (run-queue length, reductions/s, IO throughput over a
-%%% rolling window) reads as a smooth line rather than a staircase. It is
-%%% ratatui's `Chart' drawn with `Marker::Braille': the dashboard primitive (PRD
-%%% §9.1) the Phase 1 system dashboard's trend panel is built from. It is built on
-%%% {@link tuition_canvas} — a chart is a canvas with time-series semantics (a
-%%% rolling window, value bounds, an optional axis frame) layered on top: each
-%%% dataset lowers to canvas shapes, so both widgets share the one braille plotting
-%%% path rather than each rasterizing by hand.
-%%%
-%%% == Datasets ==
-%%% One or more datasets share the plot, each a series drawn in its own colour as
-%%% a connected `line', a `scatter' of dots, or a filled `area' (each sample's
-%%% column solid from the baseline up to its value). A series is a list of numbers
-%%% sampled over time (as {@link tuition_sparkline}'s is); the value is the y-axis
-%%% and the sample's position in the series the x-axis. Overlaying several series
-%%% (IO in and out, say) puts them on one shared value scale so they are directly
-%%% comparable. A dataset may carry a `name' — used only by the legend (below).
-%%%
-%%% == The rolling window ==
-%%% Only the newest samples are plotted — one per sub-pixel column, and the
-%%% sub-pixel width is `2×' the cell width, so at most the newest `2W' samples
-%%% fit. `window' bounds how many of them to show: `auto' (default) uses as many
-%%% of the newest samples as the width holds; an explicit count `N' shows only the
-%%% newest `N' (clamped to the `2W' the width can draw), a fixed-duration window
-%%% that stays the same on-screen span regardless of how much history the caller
-%%% has accumulated. A caller keeps appending to a bounded history and the chart
-%%% shows its tail, scrolling as new samples arrive.
-%%%
-%%% `x_align' fixes where the window sits when it is narrower than the plot (a
-%%% short history, or a `window' count below `2W'): `left' (default) grows the
-%%% curve rightward from the left edge (as {@link tuition_sparkline} does); `right'
-%%% pins the newest sample to the right edge and leaves the left blank until the
-%%% window fills — the live-trend look (newest always hard against the right), and
-%%% the anchoring that keeps multiple series aligned by recency rather than by age.
-%%%
-%%% == Bounds ==
-%%% `y_bounds' is `auto' (default — the min and max across every visible dataset
-%%% map to the bottom and top of the plot) or an explicit `{Min, Max}' held stable
-%%% frame to frame (a metric with a known ceiling, so the curve does not rescale
-%%% under its own noise). A value outside explicit bounds is clamped into the
-%%% plot; a flat series (all one value, or `Min =:= Max') is drawn along the
-%%% vertical middle rather than dividing by a zero range.
-%%%
-%%% == One colour per cell (known constraint) ==
-%%% A {@link tuition_braille} cell shares one `fg' across its eight dots, so where
-%%% two datasets light dots in the *same* cell the later-drawn dataset wins that
-%%% cell's colour (its dots merge, but the colour is last-writer-wins) — ratatui's
-%%% canvas layering. Datasets are plotted in list order, so the last dataset wins
-%%% collisions. Where series must never visually collide, give each its own chart
-%%% tile (stacked by {@link tuition_layout}) rather than overlaying them.
-%%%
-%%% == Optional axes and labelling ==
-%%% With `axes => true' the widget draws a light box-drawing y-axis and x-axis
-%%% meeting at the origin — the reference frame a bare trend strip lacks — and
-%%% insets the plot to make room. On top of the bare frame, four opt-in keys label
-%%% it (each reserving its own gutter or row, so they compose without overlapping):
-%%% <ul>
-%%%   <li>`y_ticks' — numeric labels up the y-axis (`auto' derives max/mid/min from
-%%%       the bounds, or pass explicit values). Reserves a left gutter as wide as
-%%%       the widest label; each label is right-aligned against the axis at the row
-%%%       its value maps to.</li>
-%%%   <li>`x_labels' — labels spread along the x-axis (e.g. oldest … newest),
-%%%       first flush-left, last flush-right. Reserves one row below the axis.</li>
-%%%   <li>`y_title' / `x_title' — axis titles. The y-title is written vertically in
-%%%       a reserved far-left column; the x-title is centred in a reserved row
-%%%       below the x-labels. All labelling uses `axis_style'.</li>
-%%% </ul>
-%%% With none of these set, `axes => true' reserves exactly one left column and one
-%%% bottom row — the bare frame, unchanged. Labelling is meaningless without the
-%%% frame, so these keys take effect only when `axes => true'.
-%%%
-%%% == Legend ==
-%%% `legend => #{...}' draws a small boxed key mapping each named dataset's colour
-%%% to its `name', floated in a corner of the plot. It resets the cells beneath it
-%%% ({@link tuition_clear}) so the curves do not show through, frames them ({@link
-%%% tuition_block}), and lists one `■ name' row per dataset that carries a `name'
-%%% (unnamed datasets are omitted). `position' picks the corner; `style' colours
-%%% the box (and backs it, so it reads over a busy plot). The legend is independent
-%%% of `axes' — it floats over the plot area either way.
-%%%
-%%% == Stateless ==
-%%% A chart holds no state between frames: the caller keeps each series' history
-%%% and passes it as config. It implements the plain {@link tuition_widget}
-%%% `render/3' callback.
-%%%
-%%% == Config ==
-%%% A `#{}' map, every key optional:
-%%% <ul>
-%%%   <li>`datasets' — a list of dataset maps (default `[]' — an empty chart draws
-%%%       only its axes, if enabled). Each dataset:
-%%%       <ul>
-%%%         <li>`data' — the series, a list of numbers (default `[]').</li>
-%%%         <li>`color' — the dot colour (default `default' — the base foreground).</li>
-%%%         <li>`marker' — `line' (default; connect consecutive samples),
-%%%             `scatter' (a dot per sample), or `area' (fill each sample's column
-%%%             from the baseline up to its value — a filled area/column chart).</li>
-%%%         <li>`name' — chardata naming the series in the legend (default: unnamed,
-%%%             so absent from the legend).</li>
-%%%       </ul></li>
-%%%   <li>`y_bounds' — `auto' (default) or an explicit `{Min, Max}'.</li>
-%%%   <li>`window' — `auto' (default; as many newest samples as the width holds)
-%%%       or a positive integer count of the newest samples to show (clamped to
-%%%       the width).</li>
-%%%   <li>`x_align' — `left' (default; grow from the left edge) or `right' (pin the
-%%%       newest sample to the right edge).</li>
-%%%   <li>`axes' — `true' to draw the axis frame, `false' (default) for a bare plot.</li>
-%%%   <li>`axis_style' — the style of the axis glyphs, ticks, labels and titles
-%%%       (default: unstyled).</li>
-%%%   <li>`y_ticks' — `auto' | a list of values, labelled up the y-axis (default:
-%%%       none). Only drawn with `axes => true'.</li>
-%%%   <li>`x_labels' — a list of chardata spread along the x-axis (default: none).
-%%%       Only drawn with `axes => true'.</li>
-%%%   <li>`y_title' / `x_title' — axis titles, chardata (default: none). Only drawn
-%%%       with `axes => true'.</li>
-%%%   <li>`legend' — `false' (default) or `#{position => top_right (default) |
-%%%       top_left | bottom_right | bottom_left, style => style()}'.</li>
-%%% </ul>
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling canvas/braille/render/layout/widget/block/clear modules. No third-party
-%%% code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_chart).
+-moduledoc """
+Chart widget — time-series trend curves at sub-cell resolution.
+
+Where `m:tuition_sparkline` draws one block bar per sample (eight vertical
+levels, one column wide), a chart plots its samples as continuous curves on a
+`m:tuition_braille` grid — 4× the vertical and 2× the horizontal resolution per cell
+— so a BEAM trend (run-queue length, reductions/s, IO throughput over a
+rolling window) reads as a smooth line rather than a staircase. It is
+ratatui's `Chart` drawn with `Marker::Braille`: the dashboard primitive a
+system dashboard's trend panel is built from. It is built on
+`m:tuition_canvas` — a chart is a canvas with time-series semantics (a
+rolling window, value bounds, an optional axis frame) layered on top: each
+dataset lowers to canvas shapes, so both widgets share the one braille plotting
+path rather than each rasterizing by hand.
+
+## Datasets
+
+One or more datasets share the plot, each a series drawn in its own colour as
+a connected `line`, a `scatter` of dots, or a filled `area` (each sample's
+column solid from the baseline up to its value). A series is a list of numbers
+sampled over time (as `m:tuition_sparkline`'s is); the value is the y-axis
+and the sample's position in the series the x-axis. Overlaying several series
+(IO in and out, say) puts them on one shared value scale so they are directly
+comparable. A dataset may carry a `name` — used only by the legend (below).
+
+## The rolling window
+
+Only the newest samples are plotted — one per sub-pixel column, and the
+sub-pixel width is `2×` the cell width, so at most the newest `2W` samples
+fit. `window` bounds how many of them to show: `auto` (default) uses as many
+of the newest samples as the width holds; an explicit count `N` shows only the
+newest `N` (clamped to the `2W` the width can draw), a fixed-duration window
+that stays the same on-screen span regardless of how much history the caller
+has accumulated. A caller keeps appending to a bounded history and the chart
+shows its tail, scrolling as new samples arrive.
+
+`x_align` fixes where the window sits when it is narrower than the plot (a
+short history, or a `window` count below `2W`): `left` (default) grows the
+curve rightward from the left edge (as `m:tuition_sparkline` does); `right`
+pins the newest sample to the right edge and leaves the left blank until the
+window fills — the live-trend look (newest always hard against the right), and
+the anchoring that keeps multiple series aligned by recency rather than by age.
+
+## Bounds
+
+`y_bounds` is `auto` (default — the min and max across every visible dataset
+map to the bottom and top of the plot) or an explicit `{Min, Max}` held stable
+frame to frame (a metric with a known ceiling, so the curve does not rescale
+under its own noise). A value outside explicit bounds is clamped into the
+plot; a flat series (all one value, or `Min =:= Max`) is drawn along the
+vertical middle rather than dividing by a zero range.
+
+## One colour per cell (known constraint)
+
+A `m:tuition_braille` cell shares one `fg` across its eight dots, so where
+two datasets light dots in the *same* cell the later-drawn dataset wins that
+cell's colour (its dots merge, but the colour is last-writer-wins) — ratatui's
+canvas layering. Datasets are plotted in list order, so the last dataset wins
+collisions. Where series must never visually collide, give each its own chart
+tile (stacked by `m:tuition_layout`) rather than overlaying them.
+
+## Optional axes and labelling
+
+With `axes => true` the widget draws a light box-drawing y-axis and x-axis
+meeting at the origin — the reference frame a bare trend strip lacks — and
+insets the plot to make room. On top of the bare frame, four opt-in keys label
+it (each reserving its own gutter or row, so they compose without overlapping):
+
+- `y_ticks` — numeric labels up the y-axis (`auto` derives max/mid/min from
+  the bounds, or pass explicit values). Reserves a left gutter as wide as
+  the widest label; each label is right-aligned against the axis at the row
+  its value maps to.
+- `x_labels` — labels spread along the x-axis (e.g. oldest … newest),
+  first flush-left, last flush-right. Reserves one row below the axis.
+- `y_title` / `x_title` — axis titles. The y-title is written vertically in
+  a reserved far-left column; the x-title is centred in a reserved row
+  below the x-labels. All labelling uses `axis_style`.
+
+With none of these set, `axes => true` reserves exactly one left column and one
+bottom row — the bare frame, unchanged. Labelling is meaningless without the
+frame, so these keys take effect only when `axes => true`.
+
+## Legend
+
+`legend => #{...}` draws a small boxed key mapping each named dataset's colour
+to its `name`, floated in a corner of the plot. It resets the cells beneath it
+(`m:tuition_clear`) so the curves do not show through, frames them (`m:tuition_block`), and lists one `■ name` row per dataset that carries a `name`
+(unnamed datasets are omitted). `position` picks the corner; `style` colours
+the box (and backs it, so it reads over a busy plot). The legend is independent
+of `axes` — it floats over the plot area either way.
+
+## Stateless
+
+A chart holds no state between frames: the caller keeps each series' history
+and passes it as config. It implements the plain `m:tuition_widget`
+`render/3` callback.
+
+## Config
+
+A `#{}` map, every key optional:
+
+- `datasets` — a list of dataset maps (default `[]` — an empty chart draws
+  only its axes, if enabled). Each dataset:
+  - `data` — the series, a list of numbers (default `[]`).
+  - `color` — the dot colour (default `default` — the base foreground).
+  - `marker` — `line` (default; connect consecutive samples),
+    `scatter` (a dot per sample), or `area` (fill each sample's column
+    from the baseline up to its value — a filled area/column chart).
+  - `name` — chardata naming the series in the legend (default: unnamed,
+    so absent from the legend).
+- `y_bounds` — `auto` (default) or an explicit `{Min, Max}`.
+- `window` — `auto` (default; as many newest samples as the width holds)
+  or a positive integer count of the newest samples to show (clamped to
+  the width).
+- `x_align` — `left` (default; grow from the left edge) or `right` (pin the
+  newest sample to the right edge).
+- `axes` — `true` to draw the axis frame, `false` (default) for a bare plot.
+- `axis_style` — the style of the axis glyphs, ticks, labels and titles
+  (default: unstyled).
+- `y_ticks` — `auto` | a list of values, labelled up the y-axis (default:
+  none). Only drawn with `axes => true`.
+- `x_labels` — a list of chardata spread along the x-axis (default: none).
+  Only drawn with `axes => true`.
+- `y_title` / `x_title` — axis titles, chardata (default: none). Only drawn
+  with `axes => true`.
+- `legend` — `false` (default) or `#{position => top_right (default) | top_left | bottom_right | bottom_left, style => style()}`.
+""".
 -behaviour(tuition_widget).
 
 -include("tuition_layout.hrl").
@@ -194,8 +192,10 @@
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Draw the chart into `Area'. A degenerate area (no columns or rows) draws
-%% nothing. See the module doc for the config map.
+-doc """
+Draw the chart into `Area`. A degenerate area (no columns or rows) draws
+nothing. See the module doc for the config map.
+""".
 -spec render(chart(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Chart, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;
