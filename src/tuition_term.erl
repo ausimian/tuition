@@ -1,18 +1,16 @@
 -module(tuition_term).
 -moduledoc """
-Terminal backend behaviour — the mandatory pluggable seam.
+The behaviour every terminal backend implements.
 
-This is the seam, required from day one, that separates the
-renderer/layout/widgets (which sit above it) from the transport that
-actually carries keystrokes and rendered frames (which sits below it).
-A local raw-mode tty (`m:tuition_term_local`), an SSH channel
-pty (`m:tuition_ssh_cli` / `m:tuition_term_ssh`), and the
-scripted test backend (`m:tuition_loop_term`) are interchangeable
-implementations. Nothing above this seam may branch on which backend is in
-use.
+This is the seam between the renderer, layout and widgets that sit above it and
+the transport that carries keystrokes and rendered frames below it. A local
+raw-mode tty (`m:tuition_term_local`), an SSH channel pty (`m:tuition_ssh_cli` /
+`m:tuition_term_ssh`) and the scripted test backend (`m:tuition_loop_term`) are
+interchangeable implementations. Nothing above this seam may branch on which
+backend is in use.
 
-A backend is addressed through an opaque {Backend, State} handle; the
-dispatch helpers below hide that from callers.
+Callers address a backend through an opaque `{Backend, State}` handle. The
+dispatch helpers below hide it from them.
 """.
 
 -export([open/2, write/2, read/2, size/1, close/1]).

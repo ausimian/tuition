@@ -1,59 +1,62 @@
 -module(tuition_braille).
 -moduledoc """
-Braille sub-cell grid — the 2×4-dot plotting kernel.
+The 2×4-dot plotting kernel: a sub-cell grid built from braille glyphs.
 
-A terminal cell is the smallest thing the `m:tuition_render` buffer can
-address, but the Unicode braille-patterns block (U+2800–U+28FF) packs a 2×4
-dot matrix into a single cell: eight independently-lit dots, so a grid of
-braille cells resolves **4× the vertical and 2× the horizontal** per terminal
-cell — a two-axis sub-cell field, where the block glyphs a `m:tuition_sparkline` draws with vary on the vertical axis only. This module is
-that grid — the
-genuinely reusable kernel `m:tuition_chart` rasterizes trend curves onto,
-and the `m:tuition_canvas` widget draws freeform shapes onto. It is
-ratatui's `Grid`/`BrailleGrid`: the pixel buffer under `Canvas` and `Chart`.
+A terminal cell is the smallest thing the `m:tuition_render` buffer can address.
+The Unicode braille-patterns block (U+2800–U+28FF) packs a 2×4 dot matrix into a
+single cell, though: eight independently-lit dots. So a grid of braille cells
+resolves **4× the vertical and 2× the horizontal** per terminal cell — a
+two-axis sub-cell field, where the block glyphs a `m:tuition_sparkline` draws
+with vary on the vertical axis only.
+
+This module is that grid: the reusable kernel `m:tuition_chart` rasterizes trend
+curves onto, and the `m:tuition_canvas` widget draws freeform shapes onto. It is
+ratatui's `Grid`/`BrailleGrid`, the pixel buffer under `Canvas` and `Chart`.
 
 ## Shape rasterizers
 
-Alongside the single-dot `set/3`/`set/4`, the kernel offers the
-straight/curved rasterizers a shape front-end (`m:tuition_canvas`) plots
-with: `line/6` (Bresenham segment), `rect/6` (axis-aligned
-rectangle outline), `fill_rect/6` (the same rectangle filled solid) and
-`circle/5` (midpoint circle outline). Each takes sub-pixel coordinates
-and lights every dot it crosses, dropping the ones outside the field per `set/4`, so a shape may over-run the edge and the visible part still draws.
+Alongside the single-dot `set/3` and `set/4`, the kernel offers the straight and
+curved rasterizers a shape front-end (`m:tuition_canvas`) plots with: `line/6` (a
+Bresenham segment), `rect/6` (an axis-aligned rectangle outline), `fill_rect/6`
+(the same rectangle filled solid) and `circle/5` (a midpoint circle outline).
+Each takes sub-pixel coordinates and lights every dot it crosses, dropping the
+ones outside the field per `set/4`, so a shape may over-run the edge and the
+visible part still draws.
 
 ## Not a widget
 
-Like `m:tuition_width`, this is an internal shared helper, not a `m:tuition_widget`: it holds no config map and implements no `render/3`. A widget
-(`m:tuition_chart`) owns a grid for the duration of one frame, plots onto it,
-and `render_into/2` composites it into the buffer.
+Like `m:tuition_width`, this is an internal shared helper, not a
+`m:tuition_widget`: it holds no config map and implements no `render/3`. A widget
+(`m:tuition_chart`) owns a grid for the duration of one frame, plots onto it, and
+`render_into/2` composites it into the buffer.
 
 ## Coordinates
 
-A grid is sized by a `t:tuition_layout:rect/0` of `W`×`H`
-cells, giving a sub-pixel field `2W` wide and `4H` tall. Sub-pixel `{GX, GY}`
-has its origin top-left, `GX` increasing rightward and `GY` downward — the
-same orientation as the cell buffer, so a caller mapping a value to a row
-flips the axis itself (as `m:tuition_chart` does). A sub-pixel outside
-`[0, 2W)`×`[0, 4H)` is silently dropped, so a rasterizer may over-run the edge
-without a bounds check of its own.
+A grid is sized by a `t:tuition_layout:rect/0` of `W`×`H` cells, giving a
+sub-pixel field `2W` wide and `4H` tall. Sub-pixel `{GX, GY}` has its origin
+top-left, `GX` increasing rightward and `GY` downward — the same orientation as
+the cell buffer. So a caller mapping a value to a row flips the axis itself, as
+`m:tuition_chart` does. A sub-pixel outside `[0, 2W)`×`[0, 4H)` is silently
+dropped, so a rasterizer may over-run the edge without a bounds check of its own.
 
 ## One colour per cell
 
 Each cell carries a single `fg` shared by all eight of its dots — the braille
-glyph is one codepoint with one SGR. `set/4` claims that colour, so when
-two series light dots in the *same* cell the later `set/4` wins the whole
-cell's colour (their dots are OR-ed together, but the cell takes the last
-colour) — ratatui's canvas layering rule, and the constraint `m:tuition_chart` documents for overlapping datasets. `set/3` carries no
-colour and is the exception: it OR-s in its dot but leaves the cell's colour
-untouched, so a bare dot-add never disturbs a coloured cell.
+glyph is one codepoint with one SGR. `set/4` claims that colour, so when two
+series light dots in the *same* cell the later `set/4` wins the whole cell's
+colour: their dots are OR-ed together, but the cell takes the last colour. This
+is ratatui's canvas layering rule, and the constraint `m:tuition_chart` documents
+for overlapping datasets. `set/3` is the exception, carrying no colour: it OR-s
+in its dot but leaves the cell's colour untouched, so a bare dot-add never
+disturbs a coloured cell.
 
 ## Emission
 
-`render_into/2` walks the lit cells and writes each as one U+2800-based
-glyph (`16#2800 bor Mask`) at its cell in the buffer, in the cell's colour.
-Every braille glyph is one column in `m:tuition_width`, so the grid
-composites through `tuition_render:diff/2` exactly as any other width-1
-text — no special-casing in the renderer.
+`render_into/2` walks the lit cells and writes each as one U+2800-based glyph
+(`16#2800 bor Mask`) at its cell in the buffer, in the cell's colour. Every
+braille glyph is one column in `m:tuition_width`, so the grid composites through
+`tuition_render:diff/2` exactly as any other width-1 text, with no special-casing
+in the renderer.
 """.
 
 -include("tuition_layout.hrl").
@@ -107,24 +110,24 @@ dims(#grid{rect = #rect{w = W, h = H}}) ->
 %%% -- plotting --------------------------------------------------------
 
 -doc """
-Light the sub-pixel at `{GX, GY}` without touching the cell's colour —
-carrying no colour argument, this is colour-neutral. The dot is OR-ed into the
-cell's mask; the cell keeps whatever colour a prior write set (or `default` if
-this is its first write). Use `set/4` to also claim the cell's colour.
+Light the sub-pixel at `{GX, GY}` without touching the cell's colour. Carrying no
+colour argument, this is colour-neutral: the dot is OR-ed into the cell's mask,
+and the cell keeps whatever colour a prior write set (or `default` if this is its
+first write). Use `set/4` to also claim the cell's colour.
 """.
 -spec set(grid(), integer(), integer()) -> grid().
 set(Grid, GX, GY) ->
     set_dot(Grid, GX, GY, keep).
 
 -doc """
-Light the sub-pixel at `{GX, GY}` and set its cell's colour to `Colour`.
-The dot is OR-ed into the cell's mask, so earlier dots in the same cell stay
-lit, and the whole cell takes `Colour` — last-writer-wins, the module doc's
-one-colour-per-cell rule. Unlike `set/3`, this always claims the colour,
-`default` included: passing `default` sets the cell back to the terminal
-foreground, so a later dataset that overlaps an earlier one wins the shared
-cell exactly as `m:tuition_chart` documents, whatever colour it carries. A
-sub-pixel outside the grid is dropped, so a rasterizer need not clip.
+Light the sub-pixel at `{GX, GY}` and set its cell's colour to `Colour`. The dot
+is OR-ed into the cell's mask, so earlier dots in the same cell stay lit, and the
+whole cell takes `Colour`: last-writer-wins, the module doc's one-colour-per-cell
+rule. Unlike `set/3`, this always claims the colour, `default` included. Passing
+`default` sets the cell back to the terminal foreground, so a later dataset that
+overlaps an earlier one wins the shared cell exactly as `m:tuition_chart`
+documents, whatever colour it carries. A sub-pixel outside the grid is dropped,
+so a rasterizer need not clip.
 """.
 -spec set(grid(), integer(), integer(), colour()) -> grid().
 set(Grid, GX, GY, Colour) ->
@@ -156,10 +159,11 @@ set_dot(#grid{cells = Cells} = Grid, GX, GY, ColourOp) ->
     Grid#grid{cells = Cells#{{CX, CY} => {Mask0 bor Bit, Colour}}}.
 
 -doc """
-Rasterize the straight line from `{X0, Y0}` to `{X1, Y1}` in `Colour`,
-lighting every sub-pixel it crosses (integer Bresenham). This is how `m:tuition_chart` connects consecutive samples into a continuous curve. Endpoints
-out of range are dropped per-sub-pixel by `set/4`; pass endpoints within
-the grid (`dims/1`) so the walk stays bounded.
+Rasterize the straight line from `{X0, Y0}` to `{X1, Y1}` in `Colour`, lighting
+every sub-pixel it crosses (integer Bresenham). This is how `m:tuition_chart`
+connects consecutive samples into a continuous curve. Endpoints out of range are
+dropped per-sub-pixel by `set/4`; pass endpoints within the grid (`dims/1`) so
+the walk stays bounded.
 """.
 -spec line(grid(), integer(), integer(), integer(), integer(), colour()) -> grid().
 line(Grid, X0, Y0, X1, Y1, Colour) ->
@@ -207,12 +211,12 @@ bresenham(Grid, X, Y, X1, Y1, DX, DY, SX, SY, Err, Colour) ->
     end.
 
 -doc """
-Rasterize the outline of the axis-aligned rectangle spanned by the two
-opposite corners `{X0, Y0}` and `{X1, Y1}` in `Colour` — its four edges, no
-fill. The corners may be given in any order (the rectangle is the bounding box
-of the two points); a degenerate span draws the line or dot the corners
-describe. Each edge is a straight `line/6`, so the same per-sub-pixel
-clipping applies: an edge past the field is drawn only where it lands on-grid.
+Rasterize the outline of the axis-aligned rectangle spanned by the two opposite
+corners `{X0, Y0}` and `{X1, Y1}` in `Colour` — its four edges, no fill. The
+corners may be given in any order (the rectangle is the bounding box of the two
+points), and a span with no width or height draws the line or dot the corners
+describe. Each edge is a straight `line/6`, so the same per-sub-pixel clipping
+applies: an edge past the field is drawn only where it lands on-grid.
 """.
 -spec rect(grid(), integer(), integer(), integer(), integer(), colour()) -> grid().
 rect(Grid, X0, Y0, X1, Y1, Colour) ->
@@ -222,17 +226,17 @@ rect(Grid, X0, Y0, X1, Y1, Colour) ->
     line(G3, X1, Y0, X1, Y1, Colour).
 
 -doc """
-Rasterize the *solid* axis-aligned rectangle spanned by the two opposite
-corners `{X0, Y0}` and `{X1, Y1}` in `Colour` — its whole interior lit, not just
-the `rect/6` outline. The corners may be given in any order (the rectangle
-is the bounding box of the two points); a degenerate span fills the line or the
-single dot the corners describe.
+Rasterize the *solid* axis-aligned rectangle spanned by the two opposite corners
+`{X0, Y0}` and `{X1, Y1}` in `Colour` — its whole interior lit, not just the
+`rect/6` outline. The corners may be given in any order (the rectangle is the
+bounding box of the two points), and a span with no width or height fills the
+line or the single dot the corners describe.
 
 The fill is a fold of horizontal `line/6` spans, one per sub-pixel row the
 rectangle covers. The span is intersected with the field first, so a rectangle
-over-running the edge fills only its on-grid part and — unlike a raw per-row walk
-— a runaway corner cannot drive the fold beyond the grid it could ever light (a
-rectangle wholly off the field draws nothing).
+over-running the edge fills only its on-grid part, and a runaway corner cannot
+drive the fold beyond the grid it could ever light — which a raw per-row walk
+would. A rectangle wholly off the field draws nothing.
 """.
 -spec fill_rect(grid(), integer(), integer(), integer(), integer(), colour()) -> grid().
 fill_rect(#grid{rect = #rect{w = W, h = H}} = Grid, X0, Y0, X1, Y1, Colour) ->
@@ -253,21 +257,21 @@ fill_rect(#grid{rect = #rect{w = W, h = H}} = Grid, X0, Y0, X1, Y1, Colour) ->
 
 -doc """
 Rasterize the outline of the circle centred at `{CX, CY}` with radius `R`
-sub-pixels in `Colour` — the integer midpoint-circle algorithm, mirroring each
-computed point across the eight octants. `R` is measured in sub-pixels (the
-axes share the field's own scale), so the result is geometrically round on the
-sub-grid; a caller whose value axes differ in scale maps `R` through one of
-them. `R =< 0` lights just the centre dot. Points off the field are dropped by
-`set/4`, so a circle larger than the grid, or centred near an edge, draws
-only the arc that lands on-grid.
+sub-pixels in `Colour`: the integer midpoint-circle algorithm, mirroring each
+computed point across the eight octants. `R` is measured in sub-pixels (the axes
+share the field's own scale), so the result is geometrically round on the
+sub-grid; a caller whose value axes differ in scale maps `R` through one of them.
+`R =< 0` lights just the centre dot. Points off the field are dropped by `set/4`,
+so a circle larger than the grid, or centred near an edge, draws only the arc
+that lands on-grid.
 
 A circle that cannot touch the field at all — its radius so large the field is
 wholly enclosed, or (for a centre outside the field) so small the field lies
-entirely beyond it — is skipped without walking, so an unbounded radius can't
+entirely beyond it — is skipped without walking. So an unbounded radius cannot
 stall the rasterizer the way an O(R) walk of discarded dots would. That covers
-the common footgun (a normally-placed centre with a runaway radius); for a
-centre placed far outside the field, keep `R` grid-scale, as `line/6` asks
-of its endpoints.
+the common footgun, a normally-placed centre with a runaway radius. For a centre
+placed far outside the field, keep `R` grid-scale, as `line/6` asks of its
+endpoints.
 """.
 -spec circle(grid(), integer(), integer(), integer(), colour()) -> grid().
 circle(Grid, CX, CY, R, Colour) when R =< 0 ->
@@ -357,18 +361,19 @@ plot_octants(Grid, CX, CY, X, Y, Colour) ->
 %%% -- emission --------------------------------------------------------
 
 -doc """
-Composite the grid into `Buf` with default base styling — `render_into/3` with an empty style.
+Composite the grid into `Buf` with default base styling: `render_into/3` with an
+empty style.
 """.
 -spec render_into(grid(), tuition_render:buffer()) -> tuition_render:buffer().
 render_into(Grid, Buf) ->
     render_into(Grid, Buf, #{}).
 
 -doc """
-Composite the grid into `Buf`, one U+2800-based glyph per lit cell, placed
-at the cell relative to the grid's rect origin. Each cell is drawn in `Style`,
-except its `fg` is overridden by the cell's own colour when it set one (a dot
-lit through `set/3`'s `default` keeps `Style`s foreground). `Style` thus
-carries shared attributes (a `bg`, `bold`) the per-cell colour rides on top of.
+Composite the grid into `Buf`, one U+2800-based glyph per lit cell, placed at the
+cell relative to the grid's rect origin. Each cell is drawn in `Style`, except
+that its `fg` is overridden by the cell's own colour when it set one (a dot lit
+through `set/3`'s `default` keeps `Style`s foreground). So `Style` carries the
+shared attributes (a `bg`, `bold`) the per-cell colour rides on top of.
 """.
 -spec render_into(grid(), tuition_render:buffer(), tuition_render:style()) ->
     tuition_render:buffer().

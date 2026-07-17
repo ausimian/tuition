@@ -1,9 +1,12 @@
 -module(tuition_loop_term).
 -moduledoc """
-Scripted terminal backend for driving a render/input loop headlessly,
-with no tty. This is the framework's public test backend — ratatui's
-`TestBackend` plays the same role: point any host that opens a `m:tuition_term` backend at it (`tuition_shell:start/2`, `tuition_demo:start/1`, or a pane test) and it replays a canned terminal so
-the loop's output can be asserted byte-for-byte.
+A scripted terminal backend that drives a render/input loop headlessly, with no
+tty.
+
+This is the framework's public test backend, the equivalent of ratatui's
+`TestBackend`. Point any host that opens a `m:tuition_term` backend at it
+(`tuition_shell:start/2`, `tuition_demo:start/1`, or a pane test) and it replays
+a canned terminal, so the loop's output can be asserted byte-for-byte.
 
 It reads its wiring from the `Opts` map the host passes straight through to
 `open/1`:
@@ -13,11 +16,11 @@ It reads its wiring from the `Opts` map the host passes straight through to
                per write, then `closed`).
   * `size` — the terminal size reported to the loop. Either a single
                `{Cols, Rows}` tuple (constant, the default `{80, 24}`), or a
-               list of sizes replayed one per `tuition_term:size/1` call
-               with the last sticking — so a test can drive a resize by
-               handing back a different size on a later poll.
+               list of sizes replayed one per `tuition_term:size/1` call, with
+               the last one sticking, so a test can drive a resize by handing
+               back a different size on a later poll.
   * `script` — a list of `tuition_term:read/2` results replayed one per
-               read; an exhausted script yields `timeout`, as a quiet real
+               read. An exhausted script yields `timeout`, as a quiet real
                terminal would. Every script MUST reach a quit key, or the loop
                spins forever.
   * `open` — an optional `{error, Reason}` that forces `open/1` to fail,

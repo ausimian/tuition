@@ -1,58 +1,59 @@
 -module(tuition_canvas).
 -moduledoc """
-Canvas widget — freeform braille drawing in value coordinates.
+Freeform braille drawing in value coordinates (stateless).
 
-Where `m:tuition_chart` plots a time-series onto the `m:tuition_braille`
-sub-cell grid, a canvas exposes that same 2×4-dot kernel directly: the caller
-names its own value coordinate system (`x_bounds`/`y_bounds`) and draws
-arbitrary shapes into it — lines, point sets, rectangles, circles — each in its
-own colour. It is ratatui's `Canvas`: the
-general drawing surface `Chart` is a specialisation of, for the diagrams a
-trend curve cannot express (a world map, a network graph, a scatter of
-arbitrary marks, a geometric overlay).
+Where `m:tuition_chart` plots a time series onto the `m:tuition_braille` sub-cell
+grid, a canvas exposes that same 2×4-dot kernel directly: the caller names its
+own value coordinate system (`x_bounds`/`y_bounds`) and draws arbitrary shapes
+into it — lines, point sets, rectangles, circles — each in its own colour. It is
+ratatui's `Canvas`, the general drawing surface `Chart` is a specialisation of,
+for the diagrams a trend curve cannot express: a world map, a network graph, a
+scatter of arbitrary marks, a geometric overlay.
 
 ## Coordinate system
 
 `x_bounds => {Xmin, Xmax}` and `y_bounds => {Ymin, Ymax}` name the value range
 each axis spans across the area. A value is mapped onto the braille sub-grid —
 `2W` sub-pixels wide and `4H` tall for a `W`×`H` cell area — with the standard
-mathematical orientation: `Xmin` at the left edge and `Xmax` at the right,
-`Ymin` at the *bottom* and `Ymax` at the *top* (y increases upward, unlike the
-cell buffer's downward rows — the widget flips the axis so callers think in
-ordinary Cartesian coordinates). Both bounds default to `{0.0, 1.0}`, so with
-no bounds set a coordinate is simply its fraction of the area.
+mathematical orientation: `Xmin` at the left edge and `Xmax` at the right, `Ymin`
+at the *bottom* and `Ymax` at the *top*. That is, y increases upward, unlike the
+cell buffer's downward rows; the widget flips the axis so callers think in
+ordinary Cartesian coordinates. Both bounds default to `{0.0, 1.0}`, so with no
+bounds set a coordinate is simply its fraction of the area.
 
-A coordinate outside its bounds is clamped to the nearest edge (as `m:tuition_chart` clamps an out-of-range value), so a shape drawn partly beyond
-the declared range is pinned to the border rather than wrapping or vanishing;
-keep shapes within the bounds for undistorted geometry. A degenerate bound
+A coordinate outside its bounds is clamped to the nearest edge (as
+`m:tuition_chart` clamps an out-of-range value), so a shape drawn partly beyond
+the declared range is pinned to the border rather than wrapping or vanishing.
+Keep shapes within the bounds for undistorted geometry. A zero-width bound
 (`Xmax =:= Xmin`) maps every value on that axis to the middle, the same
 no-gradient fallback `m:tuition_chart` uses for a flat series.
 
 ## Shapes
 
-`shapes` is a list drawn in order onto one shared grid, so — per the `m:tuition_braille` one-colour-per-cell rule — where two shapes light dots in the
+`shapes` is a list drawn in order onto one shared grid. Per the
+`m:tuition_braille` one-colour-per-cell rule, where two shapes light dots in the
 same cell the dots merge but the *later* shape wins that cell's colour. Each
 shape is a tagged tuple whose last element is its `t:tuition_braille:colour/0`:
 
-- `{line, X1, Y1, X2, Y2, Colour}` — a straight segment between two value
-  points (Bresenham).
-- `{points, [{X, Y}], Colour}` — a scatter of individual dots, one per
-  value point.
-- `{rect, X, Y, W, H, Colour}` — the outline (no fill) of the rectangle
-  whose corner is the value point `{X, Y}` and which extends `W` along
-  `+x` and `H` along `+y`.
-- `{fill_rect, X, Y, W, H, Colour}` — the same rectangle as `{rect,...}`
-  but *solid*: its whole interior is filled, not just the four edges. Use
-  it for a filled region — a highlighted zone, a heatmap-ish block.
-- `{circle, Cx, Cy, R, Colour}` — the outline of the circle centred at the
-  value point `{Cx, Cy}` with radius `R` measured in x-axis value units.
-  It is drawn round on the sub-grid; when the x and y sub-pixel scales
-  differ (the axes span different value ranges over the area) it therefore
-  reads as a circle in sub-pixels rather than in value space — match the
-  bounds to the area's aspect for a value-space circle.
+- `{line, X1, Y1, X2, Y2, Colour}` — a straight segment between two value points
+  (Bresenham).
+- `{points, [{X, Y}], Colour}` — a scatter of individual dots, one per value
+  point.
+- `{rect, X, Y, W, H, Colour}` — the outline (no fill) of the rectangle whose
+  corner is the value point `{X, Y}` and which extends `W` along `+x` and `H`
+  along `+y`.
+- `{fill_rect, X, Y, W, H, Colour}` — the same rectangle as `{rect, ...}` but
+  *solid*: its whole interior is filled, not just the four edges. Use it for a
+  filled region — a highlighted zone, a heatmap-ish block.
+- `{circle, Cx, Cy, R, Colour}` — the outline of the circle centred at the value
+  point `{Cx, Cy}` with radius `R` measured in x-axis value units. It is drawn
+  round on the sub-grid, so when the x and y sub-pixel scales differ (the axes
+  span different value ranges over the area) it reads as a circle in sub-pixels
+  rather than in value space. Match the bounds to the area's aspect for a
+  value-space circle.
 
 An unrecognised shape tuple is ignored, so a forward-compatible caller may pass
-shapes a older build does not know without crashing it.
+shapes an older build does not know without crashing it.
 
 ## Stateless
 
@@ -62,20 +63,20 @@ frame and passes it as config. It implements the plain `m:tuition_widget`
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
 - `x_bounds` / `y_bounds` — `{Min, Max}` value ranges (default `{0.0, 1.0}`).
-- `shapes` — the list of shape tuples (default `[]` — an empty canvas draws
-  only its background, if any).
-- `background` — a `t:tuition_render:style/0` the area is filled with
-  before the shapes are drawn (default `#{}` — no fill, leaving whatever the
-  canvas composites over to show through). Set a `bg` to paint a backdrop.
-- `style` — the base `t:tuition_render:style/0` the braille glyphs are
-  drawn with (default `#{}`); each shape's own colour overrides the `fg`,
-  so this carries shared attributes (a `bold`, or a default `fg` for
-  `default`-coloured shapes) the per-shape colour rides on. A glyph cell
-  inherits the `background`s `bg` (so it sits on the backdrop rather than
-  punching a default-`bg` hole in it) unless `style` sets its own.
+- `shapes` — the list of shape tuples (default `[]`, an empty canvas draws only
+  its background, if any).
+- `background` — a `t:tuition_render:style/0` the area is filled with before the
+  shapes are drawn (default `#{}`, no fill, leaving whatever the canvas sits over
+  to show through). Set a `bg` to paint a backdrop.
+- `style` — the base `t:tuition_render:style/0` the braille glyphs are drawn with
+  (default `#{}`). Each shape's own colour overrides the `fg`, so this carries
+  shared attributes (a `bold`, or a default `fg` for `default`-coloured shapes)
+  the per-shape colour rides on. A glyph cell inherits the `background`'s `bg`
+  (so it sits on the backdrop rather than punching a default-`bg` hole in it)
+  unless `style` sets its own.
 """.
 -behaviour(tuition_widget).
 
@@ -118,8 +119,8 @@ A `#{}` map, every key optional:
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the canvas into `Area`. A degenerate area (no columns or rows) draws
-nothing. See the module doc for the config map.
+Draw the canvas into `Area`. An empty area (no columns or rows) draws nothing.
+See the module doc for the config map.
 """.
 -spec render(canvas(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Cfg, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->

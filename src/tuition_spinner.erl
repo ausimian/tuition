@@ -1,22 +1,21 @@
 -module(tuition_spinner).
 -moduledoc """
-Spinner widget — an in-flight "working…" indicator (stateless).
+An in-flight "working…" indicator (stateless).
 
-A spinner draws a single animated glyph (optionally followed by a label) that
-a pane shows while an async operation is pending, so the view signals
-"loading" rather than looking frozen or showing stale data. It is the ratatui
-`throbber-widgets-tui` idiom: the standard cue a pane raises while an owner or
-remote read is in flight over a slow link (the non-blocking data-plane
-work), paired with the pane's "pending remote read" flag.
+A spinner draws a single animated glyph (optionally followed by a label) that a
+pane shows while an async operation is pending, so the view signals "loading"
+rather than looking frozen or showing stale data. It is the ratatui
+`throbber-widgets-tui` idiom: the standard cue a pane raises while a slow read is
+in flight, paired with the pane's "pending" flag.
 
 ## A pure function of `frame`
 
-The spinner holds nothing between frames and owns no timer: which glyph shows
-is purely `frame rem length` of the chosen glyph set. The caller keeps the tick
-counter — the shell already ticks every pane (the `m:tuition_pane` idle/
-sample tick that drives live refresh), so a pane increments `frame` per redraw
-and passes it in as config. It implements the plain `m:tuition_widget`
-`render/3` callback — nothing to thread across the immediate-mode rebuild.
+The spinner holds nothing between frames and owns no timer: which glyph shows is
+purely `frame rem length` of the chosen glyph set. The caller keeps the tick
+counter — the shell already ticks every pane (the `m:tuition_pane` idle/sample
+tick that drives live refresh), so a pane increments `frame` per redraw and
+passes it in as config. It implements the plain `m:tuition_widget` `render/3`
+callback, with nothing to thread across the immediate-mode rebuild.
 
 Because animation is just the frame index, the same `frame` always renders the
 same glyph: a headless test can assert a whole cycle by rendering `0, 1, 2, …`
@@ -28,39 +27,38 @@ of the cycle) rather than crashing.
 Every built-in set is single-column, so the glyph never changes width from one
 frame to the next and a trailing label stays put rather than jittering:
 
-- `braille` (default) — the light 10-frame dot-chase `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, the
-  spinner most terminals show.
-- `dots` — a heavier 8-frame filled-braille rotation `⣾⣽⣻⢿⡿⣟⣯⣷`, the same
-  family as `braille` but bolder.
+- `braille` (default) — the light 10-frame dot-chase `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, the spinner
+  most terminals show.
+- `dots` — a heavier 8-frame filled-braille rotation `⣾⣽⣻⢿⡿⣟⣯⣷`, the same family
+  as `braille` but bolder.
 - `line` — the 4-frame ASCII `|/-\\`, the universal fallback for a terminal
   without braille coverage.
-- a custom list of glyphs (each one chardata) cycled in order — pass your
-  own frames, e.g. the quadrant/half-circle spinners. Keep them a uniform
-  width so the label does not shift; the widget positions the label after
-  the glyph's measured width regardless, but a set of varying widths makes
-  the label wander. An empty list draws no glyph.
+- a custom list of glyphs (each one chardata), cycled in order — pass your own
+  frames, e.g. the quadrant or half-circle spinners. Keep them a uniform width so
+  the label does not shift; the widget positions the label after the glyph's
+  measured width regardless, but a set of varying widths makes the label wander.
+  An empty list draws no glyph.
 
 ## Layout
 
 The glyph sits at the top-left of the area; a label, when present, is drawn one
-blank column after it, both on the top row and clipped to the area (a taller
-area leaves the rows below untouched, so a spinner tiles into a single line of
-a larger pane). Keep it tiny — one glyph plus an optional short label is the
-whole footprint.
+blank column after it, both on the top row and clipped to the area (a taller area
+leaves the rows below untouched, so a spinner tiles into a single line of a
+larger pane). Keep it tiny — one glyph plus an optional short label is the whole
+footprint.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
-- `frame` — the tick, any integer (default `0`); the widget shows glyph
-  `frame rem length` of the set, wrapping (and counting back from the end
-  for a negative tick).
-- `set` — `braille` (default) | `dots` | `line` | a non-empty list of
-  custom glyphs.
-- `label` — `none` (default) or chardata drawn one column after the
-  glyph.
-- `style` — the style of the spinner glyph (default: unstyled — set at
-  least `fg` to colour it).
+- `frame` — the tick, any integer (default `0`); the widget shows glyph `frame
+  rem length` of the set, wrapping (and counting back from the end for a negative
+  tick).
+- `set` — `braille` (default), `dots`, `line`, or a non-empty list of custom
+  glyphs.
+- `label` — `none` (default) or chardata drawn one column after the glyph.
+- `style` — the style of the spinner glyph (default: unstyled; set at least `fg`
+  to colour it).
 - `label_style` — the label's style (default: unstyled).
 """.
 -behaviour(tuition_widget).
@@ -95,8 +93,8 @@ A `#{}` map, every key optional:
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the spinner into `Area`, on its top row. A degenerate area (no columns
-or rows) draws nothing. See the module doc for the config map.
+Draw the spinner into `Area`, on its top row. An empty area (no columns or rows)
+draws nothing. See the module doc for the config map.
 """.
 -spec render(spinner(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Cfg, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->

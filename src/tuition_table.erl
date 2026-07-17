@@ -1,77 +1,81 @@
 -module(tuition_table).
 -moduledoc """
-Table widget — columns, a header row, and stateful row selection.
+Columns, a header row, and stateful row selection.
 
-A table lays a fixed set of columns across its area, draws a header row at
-the top, and shows a scrollable, selectable column of data rows underneath —
-ratatui's `Table` + `TableState`. It is the widget the etop/observer-parity
-process view is built from: many rows, a handful of columns, one
-highlighted selection, sortable by a column.
+A table lays a fixed set of columns across its area, draws a header row at the
+top, and shows a scrollable, selectable column of data rows underneath. It is
+ratatui's `Table` + `TableState`: the widget you build a process view from —
+many rows, a handful of columns, one highlighted selection, sortable by a
+column.
 
 ## Layout
 
-Column widths are solved by the same `m:tuition_layout` constraint engine
-the panes are tiled with — each column carries a `t:tuition_layout:constraint/0` (`{fixed, N}` / `{percent, P}` / `fill`), and the
-columns are apportioned across the area with a `column_spacing`-wide gap
-between them. A left gutter as wide as the `highlight_symbol` is reserved so
-the header and every row line up whether or not a row is selected. Every cell
-is clipped to its own column, so text can never spill into the next column
-(or past the table onto a neighbouring pane).
+Column widths are solved by the same `m:tuition_layout` constraint engine the
+panes are tiled with. Each column carries a `t:tuition_layout:constraint/0`
+(`{fixed, N}` / `{percent, P}` / `fill`), and the columns are apportioned across
+the area with a `column_spacing`-wide gap between them. A left gutter as wide as
+the `highlight_symbol` is reserved, so the header and every row line up whether
+or not a row is selected. Every cell is clipped to its own column, so text can
+never spill into the next column, or past the table onto a neighbouring pane.
 
 ## Stateful, like the list
 
 Row selection and the scroll offset live in a `#list_state{}` (see
-`include/tuition_widget.hrl`) held by the *caller* — the renderer is
-immediate-mode and discards every frame, so state kept in the widget would
-not survive (see `m:tuition_widget`). The rows are exactly a `m:tuition_list` scrolled under the header, so `render/4` reuses `tuition_list:reconcile/3` to clamp the selection and slide the offset, and the
-navigation API (`next/2`, `prev/2`, `select/2`, `selected/1`) delegates to `m:tuition_list` — one source of truth for the
-`ListState` logic. Header rows are not part of the scroll: the offset and
-selection index count data rows only.
+`include/tuition_widget.hrl`) held by the *caller*, not in this module — the same
+`StatefulWidget` split `m:tuition_list` uses (see `m:tuition_widget` for why it
+has to be explicit).
+
+The rows are exactly a `m:tuition_list` scrolled under the header. So `render/4`
+reuses `tuition_list:reconcile/3` to clamp the selection and slide the offset,
+and the navigation API (`next/2`, `prev/2`, `select/2`, `selected/1`) delegates
+to `m:tuition_list` — one source of truth for the `ListState` logic. Header rows
+are not part of the scroll: the offset and selection index count data rows only.
 
 ## Sortable columns
 
-Sorting is the caller's — the caller holds the typed model and orders it, and
-the table only *reflects* the current sort. Pass `sort => {Col, asc | desc}`
-and the sorted column's header gains a ▲/▼ indicator. `toggle_sort/2`
-is the pure key-handler that cycles a column's direction (and switches
-columns), and `apply_sort/2` is a convenience that orders rows
-lexicographically by a column's text — enough for text columns; a caller with
-numeric/typed data sorts its own model and passes the ordered rows in.
+Sorting is the caller's job. The caller holds the typed model and orders it, and
+the table only *reflects* the current sort. Pass `sort => {Col, asc | desc}` and
+the sorted column's header gains a ▲/▼ indicator. `toggle_sort/2` is the pure
+key-handler that cycles a column's direction and switches columns.
+`apply_sort/2` is a convenience that orders rows lexicographically by a column's
+text, which is enough for text columns; a caller with numeric or otherwise typed
+data sorts its own model and passes the ordered rows in.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
 - `columns` — the column specs (default `[]`; an empty table draws
-  nothing). Each is a `#{}` with optional `header` (a `t:tuition_text:line_input/0` label — plain chardata or a styled line —
+  nothing). Each is a map with optional `header` (a
+  `t:tuition_text:line_input/0` label: plain chardata or a styled line;
   default `<<>>`), `constraint` (a `t:tuition_layout:constraint/0`,
   default `fill`) and `align` (`left` (default) | `center` | `right`,
   applied to the header and every cell in the column).
-- `rows` — the data rows, each a list of cells, one per column; each cell a
-  `t:tuition_text:line_input/0` (plain chardata as before, or a `m:tuition_text` styled line carrying mixed per-span styles over the row's
-  base). A row with fewer cells than columns leaves the trailing columns
-  blank, extra cells are ignored (default `[]`). May instead be a **lazy**
-  `{Items, RowFun}` pair — an item list and a `fun((Item) -> row())` — in
-  which case `RowFun` is applied only to the items in the visible slice,
-  so a large table never pays to build the rows scrolled off screen. The
-  item count still fixes the scroll extent; only the row rendering is
-  deferred.
+- `rows` — the data rows, each a list of cells, one per column. Each cell is
+  a `t:tuition_text:line_input/0`: plain chardata, or a `m:tuition_text`
+  styled line carrying mixed per-span styles over the row's base. A row with
+  fewer cells than columns leaves the trailing columns blank, and extra cells
+  are ignored (default `[]`). May instead be a **lazy** `{Items, RowFun}`
+  pair — an item list and a `fun((Item) -> row())` — in which case `RowFun`
+  is applied only to the items in the visible slice, so a large table never
+  pays to build the rows scrolled off screen. The item count still fixes the
+  scroll extent; only the row rendering is deferred.
 - `header_style` — style for the header row, filled full width (default:
   unstyled).
 - `row_style` — base style for every data row, filled full width (default:
-  unstyled — so an unstyled table shows whatever it is drawn over between
+  unstyled, so an unstyled table shows whatever it is drawn over between
   and beside its cells).
 - `highlight_style` — style overlaid on the selected row across its full
-  width (default: unstyled — set at least a colour to make the selection
+  width (default: unstyled, so set at least a colour to make the selection
   visible).
 - `highlight_symbol` — a prefix drawn in the left gutter of the selected
   row (e.g. `"> "`); its width is reserved on every row so the columns
-  stay aligned (default `<<>>` — no gutter).
+  stay aligned (default `<<>>`, no gutter).
 - `column_spacing` — blank columns between adjacent columns (default
   `1`).
 - `sort` — `none` (default) or `{Col, asc | desc}`, which draws the
-  indicator on column `Col`s header. It does not reorder `rows` — pass
-  them already ordered.
+  indicator on column `Col`s header. It does not reorder `rows`; pass them
+  already ordered.
 """.
 
 -include("tuition_layout.hrl").
@@ -150,11 +154,11 @@ selected(State) -> tuition_list:selected(State).
 %%% -- sorting (pure helpers) ------------------------------------------
 
 -doc """
-Cycle the sort for a column, the pure transition a "sort by this column"
-key applies: selecting a new column sorts it ascending; selecting the column
-already sorted flips its direction. Never clears — a caller wanting an
-unsorted state manages that itself. Feed the result back as the `sort` config
-(and reorder the rows with `apply_sort/2` or your own model).
+Cycle the sort for a column — the pure transition a "sort by this column" key
+applies. Selecting a new column sorts it ascending; selecting the column already
+sorted flips its direction. It never clears the sort, so a caller wanting an
+unsorted state manages that itself. Feed the result back as the `sort` config,
+and reorder the rows with `apply_sort/2` or your own model.
 """.
 -spec toggle_sort(sort(), non_neg_integer()) -> {non_neg_integer(), asc | desc}.
 toggle_sort({Col, asc}, Col) -> {Col, desc};
@@ -162,19 +166,18 @@ toggle_sort({Col, desc}, Col) -> {Col, asc};
 toggle_sort(_Sort, Col) -> {Col, asc}.
 
 -doc """
-Order `Rows` by the text of column `Col`, a convenience for text columns.
-The key is the column's cell as a UTF-8 binary (a missing cell sorts as empty),
-compared in Erlang term order — lexicographic by byte, i.e. codepoint order for
+Order `Rows` by the text of column `Col`, a convenience for text columns. The
+key is the column's cell as a UTF-8 binary (a missing cell sorts as empty),
+compared in Erlang term order: lexicographic by byte, i.e. codepoint order for
 well-formed UTF-8. `lists:sort/2` is stable, so rows equal on the key keep their
-prior order. A caller with numeric or otherwise typed columns should sort its
-own model instead and pass the ordered rows in. `none` returns `Rows`
-unchanged.
+prior order. A caller with numeric or otherwise typed columns should sort its own
+model instead and pass the ordered rows in. `none` returns `Rows` unchanged.
 
 The key is extracted once per row (decorate–sort–undecorate) rather than in the
-comparator: the process view sorts many rows, so pulling the O(N)
-cell extraction + UTF-8 conversion out of `lists:sort/2`s O(N log N) comparisons
-keeps a large table's re-sort cheap. Sorting the `{Key, Row}` pairs keeps the
-sort stable on the key alone (the row is never compared).
+comparator. A big table sorts many rows, so pulling the O(N) cell extraction and
+UTF-8 conversion out of `lists:sort/2`s O(N log N) comparisons keeps a re-sort
+cheap. Sorting the `{Key, Row}` pairs also keeps the sort stable on the key
+alone: the row is never compared.
 """.
 -spec apply_sort([row()], sort()) -> [row()].
 apply_sort(Rows, none) ->
@@ -191,12 +194,12 @@ ordered(Ka, Kb, desc) -> Ka >= Kb.
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the header and the visible slice of rows into `Area`, highlighting
-the selected row, and return the buffer together with the reconciled state
+Draw the header and the visible slice of rows into `Area`, highlighting the
+selected row, and return the buffer together with the reconciled state
 (selection clamped to the row count, offset slid to keep the selection within
-the rows viewport — the area height less the header row). A degenerate area, or
-a table with no columns, draws nothing but still reconciles the state, so a
-resize down to nothing and back leaves a valid selection/offset behind.
+the rows viewport: the area height less the header row). An empty area, or a
+table with no columns, draws nothing but still reconciles the state, so a resize
+down to nothing and back leaves a valid selection and offset behind.
 """.
 -spec render(table_cfg(), #rect{}, tuition_render:buffer(), state()) ->
     {tuition_render:buffer(), state()}.

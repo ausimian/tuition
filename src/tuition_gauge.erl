@@ -1,54 +1,49 @@
 -module(tuition_gauge).
 -moduledoc """
-Gauge widget — a horizontal progress bar with sub-cell precision.
+A horizontal progress bar.
 
-A gauge fills a fraction of its area from the left with a solid bar and
-overlays a label (the percentage, by default). It is the ratatui `Gauge`: the
-dashboard primitive the system-dashboard tiles show a memory
-breakdown, scheduler utilization or run-queue load with — a `ratio` in
-`[0, 1]` drawn as a bar the eye reads at a glance.
+Give it a `ratio` between 0 and 1 and it fills that fraction of its area from
+the left, drawing a label on top (the percentage, by default). It is the
+equivalent of ratatui's `Gauge`: the kind of bar a dashboard uses to show
+memory use, scheduler load or run-queue depth at a glance.
 
 ## Sub-cell precision
 
-The bar is drawn with the Unicode eighth-block glyphs (U+2588 `█` down to
-U+258F `▏`), so a ratio that does not land on a cell boundary still shows its
-true length: whole cells are full blocks and the final boundary cell is a
-partial block filled to the nearest eighth of a column. A 3-column gauge at
-ratio `0.5` is thus `█▌` — one-and-a-half cells — not rounded to one or two.
-This mirrors ratatui's `use_unicode` gauge; the glyphs are all one column in
-`m:tuition_width`, so the bar's width and the renderer's cursor advance
-agree.
+The bar is drawn with the Unicode eighth-block characters (`█` down to `▏`), so
+it can end partway through a cell. Whole cells are full blocks, and the last
+cell is a partial block filled to the nearest eighth. A 3-column gauge at ratio
+`0.5` draws as `█▌` (one and a half cells) rather than rounding to one or two.
+This matches ratatui's `use_unicode` gauge. Every glyph is one column wide in
+`m:tuition_width`, so the bar's width and the renderer's cursor stay in step.
 
 ## Stateless
 
-A gauge holds no state between frames: its `ratio` is recomputed by the caller
-each frame from whatever it is metering (`erlang:memory/0`, a scheduler-wall-
-time delta) and passed in as config. It implements the plain `m:tuition_widget` `render/3` callback — nothing to thread across the immediate-mode
-rebuild.
+A gauge keeps no state between frames. The caller recomputes `ratio` each frame
+from whatever it is measuring (`erlang:memory/0`, a scheduler delta) and passes
+it in as config, so the gauge only needs the plain `m:tuition_widget` `render/3`
+callback.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
-- `ratio` — the fill fraction as a number in `[0.0, 1.0]`, clamped to that
-  range (so a metering glitch that overshoots can never draw past the
-  area). Default `0.0`.
-- `label` — `none` to draw no label, or chardata to draw instead of the
-  default. Absent, the label is the rounded percentage (e.g. `"63%"`).
-- `label_align` — `left` | `center` (default) | `right`, where the label
-  sits within the area.
-- `fill_style` — the style of the filled bar glyphs (default: unstyled — a
+- `ratio` — the fill fraction, a number in `[0.0, 1.0]`. Values outside that
+  range are clamped, so a measurement glitch that overshoots can never draw past
+  the area. Default `0.0`.
+- `label` — `none` for no label, or chardata to draw instead of the default.
+  Omit it and the label is the rounded percentage (e.g. `"63%"`).
+- `label_align` — `left`, `center` (default) or `right`.
+- `fill_style` — the style of the filled bar (default: unstyled, a
   default-foreground bar; set at least `fg` to colour it).
-- `unfilled_style` — a style for the track behind the unfilled remainder
-  (default: unstyled — the track is transparent, showing whatever the
-  gauge is drawn over).
-- `label_style` — the label's style (default: unstyled — drawn in the
-  default foreground over the bar, punched through it where they
-  overlap).
+- `unfilled_style` — the style of the track behind the unfilled part (default:
+  unstyled, so the track is transparent and whatever is underneath shows
+  through).
+- `label_style` — the label's style (default: unstyled, drawn in the default
+  foreground over the bar).
 
-The bar fills every row of the area (a taller area is a thicker bar) and the
-label sits on the vertical middle row, so a one-row gauge is the common tile
-and a two/three-row gauge a bolder one.
+The bar fills every row of the area, so a taller area makes a thicker bar, and
+the label sits on the middle row. A one-row gauge is the usual tile; two or
+three rows make a bolder one.
 """.
 -behaviour(tuition_widget).
 
@@ -74,8 +69,8 @@ and a two/three-row gauge a bolder one.
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the gauge into `Area`. A degenerate area (no columns or rows) draws
-nothing. See the module doc for the config map.
+Draw the gauge into `Area`. An empty area (zero width or height) draws nothing.
+See the module doc for the config map.
 """.
 -spec render(gauge(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Gauge, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->

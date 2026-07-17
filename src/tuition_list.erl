@@ -1,53 +1,50 @@
 -module(tuition_list).
 -moduledoc """
-List widget — a scrollable, selectable column of items (stateful).
+A scrollable, selectable column of items (stateful).
 
-A list draws one item per row, tracks a selected item and a scroll offset,
-and highlights the selection. It is the ratatui `List` + `ListState`: the
-widget the process view and the supervision tree navigate with the
-arrow keys.
+A list draws one item per row, tracks a selected item and a scroll offset, and
+highlights the selection. It is the ratatui `List` + `ListState`: the widget you
+navigate a process view or a supervision tree with using the arrow keys.
 
-## Stateful, by necessity
+## Why it is stateful
 
 The selection index and scroll offset live in a `#list_state{}` (see
-`include/tuition_widget.hrl`) held by the *caller*, not in this module — the
-renderer is immediate-mode and discards every frame, so state kept inside the
-widget would not survive (see `m:tuition_widget`). `render/4` takes the
-state and returns it, with the scroll offset adjusted so the selection is in
-view; the caller keeps the returned value for the next frame. Navigation is
-likewise a pure state transition the caller applies to input:
+`include/tuition_widget.hrl`) held by the *caller*, not in this module. The
+renderer is immediate-mode and throws each frame away, so anything the widget
+tried to keep would not survive (see `m:tuition_widget`). `render/4` takes the
+state and returns it — with the scroll offset adjusted so the selection stays in
+view — and the caller holds the returned value for the next frame. Navigation
+works the same way: it is a pure state transition the caller applies to input.
 
 ```
 State1 = tuition_list:next(State0, length(Items)), %% on Down
 {Buf1, State2} = tuition_list:render(Cfg, Area, Buf0, State1).
 ```
 
-This is ratatui's `StatefulWidget` split, made explicit because Erlang has no
-`&mut`.
+This is ratatui's `StatefulWidget` split (see `m:tuition_widget` for why it has
+to be explicit).
 
-## Selection follows the view, the view follows the selection
+## The view follows the selection
 
-`render/4` always reconciles the state against the current item count
-and rect height before drawing: a selection stranded past the end of a shrunk
-list is clamped back into range, and the offset is nudged just far enough to
-keep the selection within the visible window (scrolling one row at a time at
-the edges, a page at a time when the selection jumps). So the caller can move
-the selection freely and trust the widget to keep it on screen.
+Before drawing, `render/4` reconciles the state against the current item count
+and rect height. A selection stranded past the end of a shrunk list is clamped
+back into range, and the offset is nudged just far enough to keep the selection
+on screen — one row at a time at the edges, a page at a time when the selection
+jumps. So the caller can move the selection freely and trust the widget to keep
+it visible.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
-- `items` — the rows, each a `t:tuition_text:line_input/0`:
-  plain chardata as before, or a `m:tuition_text` styled line so a row
-  can carry mixed per-span styles over the row's base (default `[]`).
+- `items` — the rows, each a `t:tuition_text:line_input/0`: plain chardata, or a
+  `m:tuition_text` styled line so a row can carry mixed per-span styles over its
+  base style (default `[]`).
 - `style` — base style for every row (default: unstyled).
-- `highlight_style` — style overlaid on the selected row, across its full
-  width (default: unstyled — so set at least a colour to make the
-  selection visible).
-- `highlight_symbol` — a prefix drawn before the selected row (e.g.
-  `"> "`); non-selected rows are indented by its width so the columns line
-  up (default `<<>>`).
+- `highlight_style` — style overlaid on the selected row, across its full width
+  (default: unstyled, so set at least a colour to make the selection visible).
+- `highlight_symbol` — a prefix drawn before the selected row (e.g. `"> "`);
+  other rows are indented by its width so the columns line up (default `<<>>`).
 """.
 
 -include("tuition_layout.hrl").
@@ -68,8 +65,8 @@ A `#{}` map, every key optional:
 %%% -- state -----------------------------------------------------------
 
 -doc """
-A fresh list state: no selection, unscrolled. A caller that does not want
-to include `tuition_widget.hrl` can start here and drive it through the API
+A fresh list state: no selection, unscrolled. A caller that would rather not
+include `tuition_widget.hrl` can start here and drive it through the API
 (`next/2`, `prev/2`, `select/2`, `selected/1`).
 """.
 -spec new() -> state().
@@ -126,11 +123,11 @@ move(N, Len, Dir) when is_integer(N) ->
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the visible slice of the list into `Area`, highlighting the selected
-row, and return the buffer together with the reconciled state (selection
-clamped to the item count, offset adjusted to keep the selection in view). A
-degenerate area draws nothing but still reconciles the state, so a resize that
-shrinks a pane to nothing and back leaves a valid selection/offset behind.
+Draw the visible slice of the list into `Area`, highlighting the selected row,
+and return the buffer together with the reconciled state (selection clamped to
+the item count, offset adjusted to keep the selection in view). An empty area
+draws nothing but still reconciles the state, so a resize that shrinks a pane to
+nothing and back leaves a valid selection and offset behind.
 """.
 -spec render(list_cfg(), #rect{}, tuition_render:buffer(), state()) ->
     {tuition_render:buffer(), state()}.
@@ -147,13 +144,13 @@ render(Cfg, #rect{w = W, h = H} = Area, Buf, State0) ->
     {Buf1, State1}.
 
 -doc """
-Reconcile a `#list_state{}` against the current item count and viewport
-height: clamp the selection into `[0, Len)` (dropping it to `none` on an empty
-list) and slide the scroll offset so the selection falls within the `Visible`
-rows. This is the reconciliation every `render/4` begins with, and it is
-exported so `m:tuition_table` — whose rows are a `#list_state{}` scrolled
-under a header — reuses the same selection/offset logic rather than
-re-deriving it. Pure: the returned state is what survives to the next frame.
+Reconcile a `#list_state{}` against the current item count and viewport height:
+clamp the selection into `[0, Len)` (dropping it to `none` on an empty list) and
+slide the scroll offset so the selection falls within the `Visible` rows. Every
+`render/4` begins with this. It is exported so `m:tuition_table` — whose rows are
+a `#list_state{}` scrolled under a header — can reuse the same selection and
+offset logic instead of re-deriving it. Pure: the returned state is what
+survives to the next frame.
 """.
 -spec reconcile(state(), non_neg_integer(), non_neg_integer()) -> state().
 reconcile(#list_state{selected = Sel0, offset = Off0}, Len, Visible) ->

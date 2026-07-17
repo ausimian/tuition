@@ -1,66 +1,65 @@
 -module(tuition_scrollbar).
 -moduledoc """
-Scrollbar widget — a track with a proportional thumb (stateless).
+A track with a proportional thumb (stateless).
 
-A scrollbar draws a thin track down (or across) its area and lays a `thumb`
-over the slice of it the visible window covers, so a scrollable pane shows at
-a glance both where you are in the content and how much of it you can see. It
-is the ratatui `Scrollbar`: the position indicator every scrollable pane
-wants beside its content, which otherwise scrolls with no visual cue of extent.
+A scrollbar draws a thin track down (or across) its area and lays a `thumb` over
+the slice of it the visible window covers, so a scrollable pane shows at a glance
+both where you are in the content and how much of it you can see. It is the
+ratatui `Scrollbar`: the position indicator every scrollable pane wants beside
+its content, which otherwise scrolls with no visual cue of extent.
 
 ## Stateless
 
-The scrollbar holds nothing between frames: the three numbers it needs —
+The scrollbar holds nothing between frames. The three numbers it needs —
 `content_length` (how much there is), `viewport_length` (how much shows) and
-`position` (how far down the top of the window sits) — are already tracked by
-the scrollable widget beside it. `tuition_list`/`tuition_table` carry an
-`offset` in their `#list_state{}` and know their item count; `tuition_paragraph`
-takes an explicit `scroll` line offset. So the caller derives the three values
-at the call site and passes them in as config; nothing is threaded across the
-immediate-mode rebuild. It implements the plain `m:tuition_widget` `render/3`
-callback.
+`position` (how far down the top of the window sits) — are already tracked by the
+scrollable widget beside it. `tuition_list` and `tuition_table` carry an `offset`
+in their `#list_state{}` and know their item count; `tuition_paragraph` takes an
+explicit `scroll` line offset. So the caller derives the three values at the call
+site and passes them in as config, with nothing threaded across the immediate-mode
+rebuild. It implements the plain `m:tuition_widget` `render/3` callback.
 
 ## Geometry
 
 The scrollbar draws a single line along the leading edge of its area: column 0
-for a `vertical` bar (spanning every row), row 0 for a `horizontal` one
-(spanning every column). Give it the thin (1-column / 1-row) rect beside the
-content it annotates; a thicker rect is drawn as that one line, not filled.
+for a `vertical` bar (spanning every row), row 0 for a `horizontal` one (spanning
+every column). Give it the thin (1-column or 1-row) rect beside the content it
+annotates; a thicker rect is drawn as that one line, not filled.
 
-The thumb length is proportional to the fraction of the content the window
-shows — `round(Track * viewport_length / content_length)`, floored at one cell
-so it never vanishes — and its offset down the track is proportional to how far
-`position` has scrolled through the `content_length - viewport_length`
-scrollable range, so the thumb sits flush at the top at `position = 0` and
-flush at the bottom at the last scroll position. When the content fits entirely
-(`content_length =< viewport_length`) the thumb fills the whole track — there
-is nowhere to scroll, and a full thumb reads as "you see everything".
+The thumb length is proportional to the fraction of the content the window shows
+— `round(Track * viewport_length / content_length)`, floored at one cell so it
+never vanishes — and its offset down the track is proportional to how far
+`position` has scrolled through the `content_length - viewport_length` range. So
+the thumb sits flush at the top at `position = 0` and flush at the bottom at the
+last scroll position. When the content fits entirely (`content_length =<
+viewport_length`) the thumb fills the whole track: there is nowhere to scroll, and
+a full thumb reads as "you see everything".
 
 ## Arrow caps
 
-Optional `begin_symbol`/`end_symbol` glyphs draw a cap at each end of the track
-(ratatui's `▲`/`▼`, `◄`/`►`); the thumb then travels only the cells between
-them. Absent (the default `none`), the track runs the full length of the area
-and the thumb the full length of the track.
+Optional `begin_symbol` and `end_symbol` glyphs draw a cap at each end of the
+track (ratatui's `▲`/`▼`, `◄`/`►`); the thumb then travels only the cells between
+them. Absent (the default `none`), the track runs the full length of the area and
+the thumb the full length of the track.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
-- `orientation` — `vertical` (default) | `horizontal`.
-- `content_length` — total items/lines being scrolled (default `0`).
-- `viewport_length` — items/lines visible at once; defaults to the track
+- `orientation` — `vertical` (default) or `horizontal`.
+- `content_length` — total items or lines being scrolled (default `0`).
+- `viewport_length` — items or lines visible at once; defaults to the track
   length (the area's long dimension, less any arrow caps).
-- `position` — the top offset of the window, clamped to the scrollable
-  range `[0, content_length - viewport_length]` (default `0`).
+- `position` — the top offset of the window, clamped to the scrollable range
+  `[0, content_length - viewport_length]` (default `0`).
 - `style` — style of the track (and the arrow caps); default unstyled.
 - `thumb_style` — style of the thumb; default unstyled.
 - `track` — the track glyph (default `│` vertical / `─` horizontal).
 - `thumb` — the thumb glyph (default `█`).
-- `begin_symbol` / `end_symbol` — `none` (default) or an arrow-cap glyph at
-  the start/end of the track. (Named `begin_symbol`/`end_symbol` rather
-  than `begin`/`end` because the bare words are Erlang keywords and could
-  not be written as map keys.)
+- `begin_symbol` / `end_symbol` — `none` (default) or an arrow-cap glyph at the
+  start/end of the track. (Named `begin_symbol`/`end_symbol` rather than
+  `begin`/`end` because the bare words are Erlang keywords and could not be
+  written as map keys.)
 """.
 -behaviour(tuition_widget).
 
@@ -95,8 +94,8 @@ A `#{}` map, every key optional:
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the scrollbar into `Area`. A degenerate area (no columns or rows)
-draws nothing. See the module doc for the config map.
+Draw the scrollbar into `Area`. An empty area (no columns or rows) draws nothing.
+See the module doc for the config map.
 """.
 -spec render(scrollbar(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Cfg, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->

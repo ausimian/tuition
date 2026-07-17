@@ -1,35 +1,33 @@
 -module(tuition_demo).
 -moduledoc """
-"Hello, world" reference loop — the framework's smallest end-to-end
-example, and the living exercise of the capability probe.
+The smallest end-to-end example: a "hello, world" render/input loop.
 
-This is the minimal immediate-mode loop a `tuition` consumer starts from: it
-opens a pluggable `m:tuition_term` backend, probes its capabilities, and
-paints a single "hello, world" pane, folding input and resize into the frame
-each iteration. It began as the first end-to-end example;
-after the framework was split out it stays here as the reference demo and the
-only place the caps-probe integration is exercised end-to-end. The full app
-shell (`m:tuition_shell`) supersedes it as the product entry point.
+This is the minimal immediate-mode loop a `tuition` consumer starts from. It
+opens a pluggable `m:tuition_term` backend, probes its capabilities, and paints
+a single "hello, world" pane, folding input and resize into the frame each
+iteration. It is also the only place the capability probe is exercised end to
+end. For a real application, the full app shell (`m:tuition_shell`) is the entry
+point.
 
 ## The render/input loop
 
-`start/1` opens a terminal backend, probes its capabilities
-(`m:tuition_caps`), paints a "hello, world" pane laid out by
-`m:tuition_layout`, then runs an immediate-mode loop: each iteration polls
-input through `m:tuition_input_driver`, folds the decoded events (keys,
-mouse, paste) plus any terminal resize into the UI state, rebuilds the frame
-with `m:tuition_render` and writes only the diff. It quits on `q` (or
-Ctrl-C) and always restores the terminal via `tuition_term:close/1` — on a
-clean quit or a read/write error alike — so the shell is left pristine.
+`start/1` opens a terminal backend, probes its capabilities (`m:tuition_caps`)
+and paints a "hello, world" pane laid out by `m:tuition_layout`. It then runs an
+immediate-mode loop. Each iteration polls input through
+`m:tuition_input_driver`, folds the decoded events (keys, mouse, paste) plus any
+terminal resize into the UI state, rebuilds the frame with `m:tuition_render`
+and writes only the diff. It quits on `q` (or Ctrl-C) and always restores the
+terminal via `tuition_term:close/1`, on a clean quit and on a read/write error
+alike, so the shell is left pristine.
 
-The probe runs once, right after the backend opens and before the first
-frame, reading its replies off the same input channel the loop later uses.
-Its result drives real output here: the pane is drawn in 24-bit colour on a
-truecolor terminal and falls back to a 256-colour approximation otherwise,
-and the status line names the enrichments the terminal reported. Because the
-probe shares the input channel, any non-reply bytes it reads (a key pressed
-during the probe window) are preserved and replayed as the loop's first input
-rather than lost — so, e.g., a quick `q` against a silent terminal still quits.
+The probe runs once, right after the backend opens and before the first frame,
+reading its replies off the same input channel the loop later uses. Its result
+drives real output here: the pane is drawn in 24-bit colour on a truecolor
+terminal and falls back to a 256-colour approximation otherwise, and the status
+line names the enrichments the terminal reported. Because the probe shares the
+input channel, any non-reply bytes it reads (a key you pressed during the probe
+window) are kept and replayed as the loop's first input rather than lost. So a
+quick `q` against a silent terminal still quits.
 """.
 
 -include("tuition_layout.hrl").
@@ -64,30 +62,29 @@ rather than lost — so, e.g., a quick `q` against a silent terminal still quits
 }).
 
 -doc """
-Start the demo against the local node, using the default local
-terminal backend. Blocks until the user quits; returns `ok` once the terminal
-has been restored, or `{error, Reason}` if the backend could not be opened
-(e.g. no controlling tty, or its geometry could not be read). A live
-`erl`/`iex` shell that already owns the tty is *not* a failure: the
-local backend borrows it through the current shell group in cooperative
-submode (see `m:tuition_term_local`).
+Start the demo against the local node, using the default local terminal backend.
+Blocks until you quit. Returns `ok` once the terminal has been restored, or
+`{error, Reason}` if the backend could not be opened (e.g. no controlling tty,
+or its geometry could not be read). A live `erl`/`iex` shell that already owns
+the tty is *not* a failure: the local backend borrows it through the current
+shell group in cooperative submode (see `m:tuition_term_local`).
 """.
 -spec start() -> ok | {error, term()}.
 start() -> start(#{}).
 
 -doc """
-As `start/0`, with options. `backend` selects the terminal backend
-module (default `m:tuition_term_local`); the whole `Opts` map is passed
-through to the backend's `open/1`, so a backend reads its own keys from it.
-Selecting a backend this way is also how the loop is driven in tests.
+As `start/0`, with options. `backend` selects the terminal backend module
+(default `m:tuition_term_local`), and the whole `Opts` map is passed through to
+the backend's `open/1`, so a backend reads its own keys from it. Selecting a
+backend this way is also how the loop is driven in tests.
 
-Capability detection can be steered for a backend that cannot answer the
-interactive probe — an asynchronous or high-latency transport where the query
-round-trip overruns the read window: `probe => false` skips the
-probe for the `tuition_caps:baseline/0` set, and `caps => Caps` supplies a
-fixed `t:tuition_caps:caps/0` profile verbatim. Either way no terminal
-queries are written, so no stray reply can leak into input; the default (neither
-key) still probes. See `tuition_caps:resolve/2`.
+You can steer capability detection for a backend that cannot answer the
+interactive probe, such as an asynchronous or high-latency transport where the
+query round-trip overruns the read window. `probe => false` skips the probe and
+takes the `tuition_caps:baseline/0` set; `caps => Caps` supplies a fixed
+`t:tuition_caps:caps/0` profile verbatim. Either way no terminal queries are
+written, so no stray reply can leak into input. The default, with neither key,
+still probes. See `tuition_caps:resolve/2`.
 """.
 -spec start(Opts :: map()) -> ok | {error, term()}.
 start(Opts) ->
