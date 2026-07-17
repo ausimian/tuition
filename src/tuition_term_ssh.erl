@@ -1,18 +1,18 @@
 -module(tuition_term_ssh).
 -moduledoc """
-SSH channel terminal backend.
+The terminal backend for an SSH channel.
 
-This backend is opened by `m:tuition_ssh_cli`, not directly by an
-application. The SSH channel callback owns the channel process and acts as a
-small broker between OTP ssh's asynchronous channel messages and the
-pull-style `m:tuition_term` callbacks the shell already uses:
+`m:tuition_ssh_cli` opens this backend; an application never opens it directly.
+The SSH channel callback owns the channel process and brokers between OTP ssh's
+asynchronous channel messages and the pull-style `m:tuition_term` callbacks the
+shell already uses:
 
 - `read/2` waits for bytes delivered by SSH `data` messages.
 - `write/2` sends rendered ANSI bytes over the SSH channel.
 - `size/1` reads the latest pty/window-change size.
 - `close/1` asks the channel to send eof/exit-status and stop.
 
-The shell and pane contracts are unchanged: a host selects this backend by
+The shell and pane contracts are unchanged. A host selects this backend by
 running the shell through `m:tuition_ssh_cli`, which injects the private
 `ssh_channel` option during session startup.
 """.

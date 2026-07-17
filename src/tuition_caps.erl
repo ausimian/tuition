@@ -1,30 +1,29 @@
 -module(tuition_caps).
 -moduledoc """
-Terminal capability probing.
+Asks the terminal which optional features it supports.
 
-The framework assumes a hardcoded modern xterm/ECMA-48 baseline — cursor
-addressing, SGR, the alternate screen, screen clear — unconditionally.
-On top of that baseline it probes, at startup, for a handful of *optional*
-enrichments by writing query sequences to the terminal and reading the
-replies back off the input stream (clean to do now that raw mode delivers
-input verbatim). A terminal that does not support a feature simply stays
-silent for that query, so a missing reply degrades the capability to off.
+The framework assumes a modern xterm/ECMA-48 baseline unconditionally — cursor
+addressing, SGR, the alternate screen, screen clear. On top of that baseline it
+probes at startup for a handful of *optional* enrichments, writing query
+sequences to the terminal and reading the replies back off the input stream
+(clean to do now that raw mode delivers input verbatim). A terminal that does not
+support a feature simply stays silent for that query, so a missing reply degrades
+the capability to off.
 
 ## Mechanism
 
-`probe/2` writes every query in one burst, then a Primary Device
-Attributes request (`ESC [ c`). Terminals answer queries in order, so the DA1
-reply — `ESC [ ?... c` — acts as a sentinel: once it arrives, every
-supported query has already answered and every unsupported one has stayed
-silent. The read loop therefore stops at the DA1 reply (or a read timeout,
-whichever comes first) rather than waiting the full timeout per capability.
+`probe/2` writes every query in one burst, then a Primary Device Attributes
+request (`ESC [ c`). Terminals answer queries in order, so the DA1 reply
+(`ESC [ ?... c`) acts as a sentinel: once it arrives, every supported query has
+already answered and every unsupported one has stayed silent. The read loop
+therefore stops at the DA1 reply, or at a read timeout, whichever comes first,
+rather than waiting the full timeout per capability.
 
-DA1 is used as the sentinel rather than a Device Status Report because a
-DSR's Cursor Position Report (`ESC [ row; col R`) is byte-identical to a
-modified F3 keypress (`ESC [ 1; 2 R`): a CPR sentinel could be ended early
-by such a keystroke arriving mid-probe, leaving the real capability replies
-queued for the input parser to misread. A DA1 reply (`ESC [ ?... c`) cannot
-collide with any key sequence.
+DA1 is the sentinel rather than a Device Status Report because a DSR's Cursor
+Position Report (`ESC [ row; col R`) is byte-identical to a modified F3 keypress
+(`ESC [ 1; 2 R`). Such a keystroke arriving mid-probe could end a CPR sentinel
+early, leaving the real capability replies queued for the input parser to
+misread. A DA1 reply (`ESC [ ?... c`) cannot collide with any key sequence.
 
 The queries used:
 
@@ -41,9 +40,9 @@ The queries used:
 
 ## Purity
 
-Reply decoding (`parse_replies/1`) is a pure function of the reply
-bytes, independent of any process or timer, so it is exhaustively testable
-against fixtures. Only `probe/2` touches the terminal seam.
+Reply decoding (`parse_replies/1`) is a pure function of the reply bytes,
+independent of any process or timer, so it is exhaustively testable against
+fixtures. Only `probe/2` touches the terminal seam.
 """.
 
 -include("tuition_caps.hrl").
@@ -101,14 +100,14 @@ As `probe/2` with the default read timeout.
 probe(Handle) -> probe(Handle, ?DEFAULT_TIMEOUT).
 
 -doc """
-Probe `Handle` for the optional capabilities and return `{Caps, Residue}`:
-the capability set, plus any non-reply bytes read during the probe window — a
-key the user pressed before the terminal answered, or a truncated escape tail.
-Writes the queries, reads replies until the DA1 sentinel or a read timeout,
-then decodes them (`decode_replies/1`). A write failure, or a terminal
-that answers nothing, yields the `baseline/0` set — never an error. The
-residue is handed back so the host can replay it into the input stream instead
-of swallowing the keystroke; see `decode_replies/1` for which bytes survive.
+Probe `Handle` for the optional capabilities and return `{Caps, Residue}`: the
+capability set, plus any non-reply bytes read during the probe window (a key the
+user pressed before the terminal answered, or a truncated escape tail). It writes
+the queries, reads replies until the DA1 sentinel or a read timeout, then decodes
+them (`decode_replies/1`). A write failure, or a terminal that answers nothing,
+yields the `baseline/0` set rather than an error. The residue is handed back so
+the host can replay it into the input stream instead of swallowing the keystroke.
+See `decode_replies/1` for which bytes survive.
 """.
 -spec probe(tuition_term:handle(), timeout()) -> {caps(), binary()}.
 probe(Handle, Timeout) ->
@@ -118,15 +117,14 @@ probe(Handle, Timeout) ->
     end.
 
 -doc """
-Resolve a capability set for a host from its option map, probing the
-terminal only when neither an explicit profile nor an opt-out is given. This is
-the hook a host threads through so a backend that cannot answer the interactive
-probe can skip it: on an asynchronous or high-latency transport the query
-round-trip overruns the read window (`probe/2`'s), so the probe both fails
-*and* corrupts input — late replies arrive after the loop starts and, in
-the case of the DECRQSS truecolor read-back (a DCS, byte-identical to an
-`Alt`+`Shift`+`P` keystroke), decode as a burst of fake keys. Returns
-`{Caps, Residue}` in the same shape as `probe/2`:
+Resolve a capability set for a host from its option map, probing the terminal
+only when neither an explicit profile nor an opt-out is given. This is the hook a
+host threads through so a backend that cannot answer the interactive probe can
+skip it. On an asynchronous or high-latency transport the query round-trip
+overruns `probe/2`'s read window, so the probe both fails *and* corrupts input:
+late replies arrive after the loop starts, and the DECRQSS truecolor read-back
+(a DCS, byte-identical to an `Alt`+`Shift`+`P` keystroke) decodes as a burst of
+fake keys. Returns `{Caps, Residue}` in the same shape as `probe/2`:
 
 - `#{caps:= Caps}` — use that profile verbatim; no queries are written and
   the residue is empty.
@@ -135,11 +133,11 @@ the case of the DECRQSS truecolor read-back (a DCS, byte-identical to an
 - otherwise — `probe/1` the terminal (the default). An explicit `caps`
   wins over `probe`, which wins over the probe default.
 
-When probing is skipped *no* terminal queries are emitted, so no stray
-reply can be injected as input. The `COLORTERM` env fold stays the host's job
-(see `apply_colorterm/2`), layered on top of a probed or baseline result
-but not a caller-supplied one — the host's environment describes the host, not
-the (possibly remote) terminal the caps were handed for.
+When probing is skipped *no* terminal queries are emitted, so no stray reply can
+be injected as input. The `COLORTERM` env fold stays the host's job (see
+`apply_colorterm/2`), layered on top of a probed or baseline result but not a
+caller-supplied one — the host's environment describes the host, not the
+(possibly remote) terminal the caps were handed for.
 """.
 -spec resolve(tuition_term:handle(), map()) -> {caps(), binary()}.
 resolve(_Handle, #{caps := Caps}) ->
@@ -154,9 +152,10 @@ Fold a `COLORTERM` environment value into a capability set. Some terminals
 advertise 24-bit colour via `COLORTERM=truecolor`|`24bit` yet do not answer the
 DECRQSS truecolor probe, so that env hint is taken as truecolor support. `false`
 (the variable is unset) or any other value leaves the set unchanged, and it only
-ever adds truecolor, never clears it. Kept here (beside the reply decoding) but
-applied by the host, which owns the environment, on top of `probe/2` — so
-`probe/2` itself stays a pure function of the terminal's replies.
+ever adds truecolor, never clears it. It lives here, beside the reply decoding,
+but the host applies it on top of `probe/2` because the host owns the
+environment. That way `probe/2` itself stays a pure function of the terminal's
+replies.
 """.
 -spec apply_colorterm(string() | false, caps()) -> caps().
 apply_colorterm(Value, Caps) when Value =:= "truecolor"; Value =:= "24bit" ->
@@ -167,46 +166,46 @@ apply_colorterm(_Value, Caps) ->
 %%% -- field accessors -------------------------------------------------
 
 -doc """
-Whether 24-bit RGB colour is available — the one field style-picking code
-actually branches on (fall back to a 256-colour or named SGR when `false`).
-The record-free reader so a consumer never has to `Record.extract` or `elem/2`
+Whether 24-bit RGB colour is available. This is the one field style-picking code
+actually branches on: fall back to a 256-colour or named SGR when `false`. It is
+the record-free reader, so a consumer never has to `Record.extract` or `elem/2`
 the `#caps{}` returned by `probe/1` / `resolve/2` / `baseline/0`.
 """.
 -spec truecolor(caps()) -> boolean().
 truecolor(#caps{truecolor = V}) -> V.
 
 -doc """
-Whether synchronized output (DEC `?2026`) is available — batch a frame so
-a repaint is presented without tearing.
+Whether synchronized output (DEC `?2026`) is available: batch a frame so a
+repaint is presented without tearing.
 """.
 -spec sync_output(caps()) -> boolean().
 sync_output(#caps{sync_output = V}) -> V.
 
 -doc """
-Whether bracketed paste (DEC `?2004`) is available — pasted text is
-delimited so it is never mistaken for typed keys.
+Whether bracketed paste (DEC `?2004`) is available: pasted text is delimited so
+it is never mistaken for typed keys.
 """.
 -spec bracketed_paste(caps()) -> boolean().
 bracketed_paste(#caps{bracketed_paste = V}) -> V.
 
 -doc """
-Whether SGR mouse reporting (DEC `?1006`) is available — mouse events with
+Whether SGR mouse reporting (DEC `?1006`) is available: mouse events with
 unbounded coordinates.
 """.
 -spec sgr_mouse(caps()) -> boolean().
 sgr_mouse(#caps{sgr_mouse = V}) -> V.
 
 -doc """
-Whether the kitty keyboard protocol is available — unambiguous
-key/modifier reporting.
+Whether the kitty keyboard protocol is available: unambiguous key/modifier
+reporting.
 """.
 -spec kitty_keyboard(caps()) -> boolean().
 kitty_keyboard(#caps{kitty_keyboard = V}) -> V.
 
 -doc """
-The capability set as a boolean-valued map keyed by field name — the whole
-set at once, for a consumer that would rather match a map than call the five
-accessors. Every `baseline/0` field is present.
+The capability set as a boolean-valued map keyed by field name: the whole set at
+once, for a consumer that would rather match a map than call the five accessors.
+Every `baseline/0` field is present.
 """.
 -spec to_map(caps()) ->
     #{
@@ -273,26 +272,25 @@ da_tail(_) -> false.
 %%% -- reply decoding --------------------------------------------------
 
 -doc """
-Decode a buffer of terminal replies into `{Caps, Residue}`: the
-capability set, plus the bytes that were *not* part of a terminal
-reply. Recognised (and ignored-but-complete) CSI and DCS responses — the
-DECRQM/DECRQSS/kitty replies and the DA1 sentinel — set their capability and
-are consumed. Two kinds of byte survive as residue instead: a stray byte that
-does not begin a response we recognise (a plain key the user pressed during
-the probe window), and a trailing *incomplete* DCS/CSI (a partial escape
-at the tail). A *complete* CSI/DCS is always consumed as a reply, even
-when its final is one we ignore: a real arrow-key pressed mid-probe is
-byte-for-byte a CSI and cannot be told apart from a genuine reply, and
-mis-feeding a real reply back to the input parser would be worse than dropping
-the rare mid-probe arrow-key. Pure — the whole point is testability without a
-terminal.
+Decode a buffer of terminal replies into `{Caps, Residue}`: the capability set,
+plus the bytes that were *not* part of a terminal reply. Recognised (and
+ignored-but-complete) CSI and DCS responses — the DECRQM/DECRQSS/kitty replies
+and the DA1 sentinel — set their capability and are consumed. Two kinds of byte
+survive as residue instead: a stray byte that does not begin a response we
+recognise (a plain key the user pressed during the probe window), and a trailing
+*incomplete* DCS/CSI (a partial escape at the tail). A *complete* CSI/DCS is
+always consumed as a reply, even when its final is one we ignore. A real
+arrow-key pressed mid-probe is byte-for-byte a CSI and cannot be told apart from
+a genuine reply, and mis-feeding a real reply back to the input parser would be
+worse than dropping the rare mid-probe arrow-key. Pure, so it is testable
+without a terminal.
 """.
 -spec decode_replies(binary()) -> {caps(), binary()}.
 decode_replies(Bin) -> parse(Bin, #caps{}, <<>>).
 
 -doc """
-Decode replies into just the capability set, discarding the residue. The
-reply-only view; `decode_replies/1` additionally surfaces the residue.
+Decode replies into just the capability set, discarding the residue. This is the
+reply-only view; `decode_replies/1` also surfaces the residue.
 """.
 -spec parse_replies(binary()) -> caps().
 parse_replies(Bin) -> element(1, decode_replies(Bin)).

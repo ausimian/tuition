@@ -1,6 +1,6 @@
 -module(tuition_ssh_cli).
 -moduledoc """
-OTP ssh daemon CLI channel for hosting a tuition shell.
+An OTP ssh daemon CLI channel that hosts a tuition shell over SSH.
 
 Use this module as the daemon's custom `ssh_cli` callback:
 
@@ -13,15 +13,14 @@ ssh:start(),
 ]).
 ```
 
-`PaneSpecs` is the same non-empty list passed to `tuition_shell:start/2`
-locally. The pane modules and `m:tuition_shell` do not learn about SSH;
-this channel callback starts one shell process per SSH shell request and
-injects `m:tuition_term_ssh` as the terminal backend.
+`PaneSpecs` is the same non-empty list you pass to `tuition_shell:start/2`
+locally. Neither the pane modules nor `m:tuition_shell` learn about SSH. This
+channel callback starts one shell process per SSH shell request and injects
+`m:tuition_term_ssh` as the terminal backend.
 
-The channel process also brokers terminal backend calls because OTP ssh
-delivers input, pty and resize information asynchronously, while
-`m:tuition_term` exposes synchronous `read`/`write`/`size`/`close`
-callbacks.
+The channel process also brokers terminal backend calls, because OTP ssh
+delivers input, pty and resize information asynchronously while
+`m:tuition_term` exposes synchronous `read`/`write`/`size`/`close` callbacks.
 """.
 %% The `ssh_server_channel' behaviour lints our callbacks against OTP `ssh'. It
 %% is a compile-time check only, with no runtime effect. rebar3 compiles with all

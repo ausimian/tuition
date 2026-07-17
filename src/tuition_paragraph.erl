@@ -1,43 +1,43 @@
 -module(tuition_paragraph).
 -moduledoc """
-Paragraph widget — styled, wrapped, aligned, scrollable text.
+Styled, wrapped, aligned, scrollable text.
 
-A paragraph renders a block of text into a rect: it splits the text into
-lines on `\n`, optionally word-wraps each source line to the rect width,
-aligns every rendered line left/centre/right, and draws the slice of lines a
-vertical scroll offset selects. It is the ratatui `Paragraph` — the widget the
-detail/help panes and the system-dashboard text tiles are built
-from.
+A paragraph renders a block of text into a rect. It splits the text into lines
+on `\n`, optionally word-wraps each source line to the rect width, aligns every
+rendered line left/centre/right, and draws the slice of lines a vertical scroll
+offset selects. It is the ratatui `Paragraph`: the widget you build detail
+panes, help text and text tiles from.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
-- `text` — the content. Plain chardata (embedded `\n` / `\r\n` split it
-  into lines) as before, or the `m:tuition_text` styled model — a
-  `t:tuition_text:text_input/0` — so a single line can carry mixed
-  per-span styles. Default `<<>>` (an empty paragraph draws nothing).
-- `wrap` — `none` (default; long lines are clipped at the right edge) or
-  `word` (greedy word wrap to the rect width, hard-splitting a single word
-  longer than the width). Word wrap works across spans, carrying each
-  run's style with it.
+- `text` — the content. Plain chardata (embedded `\n` / `\r\n` split it into
+  lines), or the `m:tuition_text` styled model (a `t:tuition_text:text_input/0`)
+  so a single line can carry mixed per-span styles. Default `<<>>` (an empty
+  paragraph draws nothing).
+- `wrap` — `none` (default; long lines are clipped at the right edge) or `word`
+  (greedy word wrap to the rect width, hard-splitting a single word longer than
+  the width). Word wrap works across spans, carrying each run's style with it.
 - `align` — `left` (default), `center` or `right`, applied per line.
-- `scroll` — the number of rendered lines to skip from the top (default
-  `0`); the vertical scroll offset. Held in the app state by the caller,
-  like any other widget scroll position.
-- `style` — a base style overlaid on every drawn cell (default: unstyled).
-  A span's own style is layered over this base, so an unstyled span shows
-  the paragraph style and a span key overrides it.
+- `scroll` — the number of rendered lines to skip from the top (default `0`);
+  the vertical scroll offset. The caller holds it in the app state, like any
+  other widget scroll position.
+- `style` — a base style overlaid on every drawn cell (default: unstyled). A
+  span's own style is layered over this base, so an unstyled span shows the
+  paragraph style and a span key overrides it.
 
 ## Wrapping and width
 
-Wrapping and alignment measure text in terminal *columns* (`m:tuition_width`), not codepoints, so a line of CJK or emoji wraps and centres by
-the space it actually occupies. Word wrap collapses runs of spaces (ratatui's
-trimming wrap): each rendered line is packed greedily and its own leading/
-trailing padding comes from alignment, not the source spacing. A word that
-straddles a style boundary keeps each run's style through the wrap. Whatever the
-wrap decision, every rendered line is finally drawn through `tuition_text:put_line/6`, which truncates it to the rect — so nothing ever
-spills past the paragraph's region onto a neighbour.
+Wrapping and alignment measure text in terminal *columns* (`m:tuition_width`),
+not codepoints, so a line of CJK or emoji wraps and centres by the space it
+actually occupies. Word wrap collapses runs of spaces (ratatui's trimming wrap):
+each rendered line is packed greedily, and its leading and trailing padding come
+from alignment, not the source spacing. A word that straddles a style boundary
+keeps each run's style through the wrap. Whatever the wrap decision, every
+rendered line is finally drawn through `tuition_text:put_line/6`, which truncates
+it to the rect, so nothing ever spills past the paragraph's region onto a
+neighbour.
 """.
 -behaviour(tuition_widget).
 
@@ -68,8 +68,8 @@ spills past the paragraph's region onto a neighbour.
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the paragraph into `Area`. A degenerate area (no columns or rows)
-draws nothing. See the module doc for the config map.
+Draw the paragraph into `Area`. An empty area (no columns or rows) draws
+nothing. See the module doc for the config map.
 """.
 -spec render(paragraph(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Para, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->

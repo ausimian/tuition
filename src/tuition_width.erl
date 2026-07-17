@@ -1,32 +1,31 @@
 -module(tuition_width).
 -moduledoc """
-Unicode display width — terminal columns per grapheme cluster.
+How many terminal columns a piece of text occupies.
 
-The renderer must advance the cursor by the number of columns a run of
-text actually occupies, not by the number of codepoints it contains.
-Getting this wrong corrupts every subsequent cell on the row — the #1
+The renderer must advance the cursor by the number of columns a run of text
+actually occupies, not by the number of codepoints it contains. Getting this
+wrong corrupts every subsequent cell on the row, which makes it the #1
 correctness risk here. Two facts drive the whole module:
 
   * A user-perceived character is a *grapheme cluster* — possibly several
-    codepoints (a base plus combining marks, or an emoji ZWJ sequence) —
-    that occupies a single run of columns. We split text into clusters
-    with `string:next_grapheme/1` (stdlib yields clusters, never
-    columns) and take the width of each cluster as a whole.
-  * A cluster's column count is governed by its base codepoint: combining
-    marks (Unicode Mn/Me), format/zero-width characters (Cf: ZWSP, ZWNJ,
-    ZWJ,...), C0/C1 controls (Cc) and variation selectors take 0 columns;
-    East Asian Wide/Fullwidth codepoints take 2; everything else takes 1.
-    An emoji-presentation selector (VS16), a skin-tone modifier, or an
-    emoji ZWJ sequence promotes an otherwise-narrow base to width 2, and a
+    codepoints (a base plus combining marks, or an emoji ZWJ sequence) — that
+    occupies a single run of columns. We split text into clusters with
+    `string:next_grapheme/1` (stdlib yields clusters, never columns) and take
+    the width of each cluster as a whole.
+  * A cluster's column count is governed by its base codepoint. Combining marks
+    (Unicode Mn/Me), format/zero-width characters (Cf: ZWSP, ZWNJ, ZWJ,...),
+    C0/C1 controls (Cc) and variation selectors take 0 columns. East Asian
+    Wide/Fullwidth codepoints take 2. Everything else takes 1. An
+    emoji-presentation selector (VS16), a skin-tone modifier, or an emoji ZWJ
+    sequence promotes an otherwise-narrow base to width 2, and a
     regional-indicator base (a flag) is width 2.
 
-The width data below is three self-contained sorted interval
-tables — the *wide* set (East Asian Wide + Fullwidth, plus the emoji
-blocks that render double-width), the *zero* set (Mn/Me/Cf/Cc + variation
-selectors), and the *Extended_Pictographic* set (genuine emoji bases) —
-derived offline from the Unicode 16.0 character database. Nothing here
-calls into `prim_tty` or `unicode_util` at runtime; both `prim_tty` and
-`unicode_util` are used only to generate/validate the tables offline.
+The width data below is three self-contained sorted interval tables, derived
+offline from the Unicode 16.0 character database: the *wide* set (East Asian
+Wide + Fullwidth, plus the emoji blocks that render double-width), the *zero*
+set (Mn/Me/Cf/Cc + variation selectors), and the *Extended_Pictographic* set
+(genuine emoji bases). Nothing here calls into `prim_tty` or `unicode_util` at
+runtime; both are used only to generate and validate the tables offline.
 """.
 
 -export([width/1, swidth/1]).
@@ -49,11 +48,11 @@ calls into `prim_tty` or `unicode_util` at runtime; both `prim_tty` and
 Display width, in terminal columns, of a single grapheme cluster.
 
 Accepts a bare codepoint, a binary or a list of codepoints. For a well-formed
-cluster the result is 0, 1 or 2 — the base codepoint's width (0 for
-combining/zero-width, 2 for East Asian Wide/Fullwidth, 1 otherwise), or 2 for
-an emoji cluster (VS16, a flag, or a ZWJ/skin-tone modifier on an emoji base).
-Malformed input (a stray non-zero-width code point trailing the base) is
-summed rather than under-counted, so it may exceed 2. An empty cluster is 0.
+cluster the result is 0, 1 or 2: the base codepoint's width (0 for
+combining/zero-width, 2 for East Asian Wide/Fullwidth, 1 otherwise), or 2 for an
+emoji cluster (VS16, a flag, or a ZWJ/skin-tone modifier on an emoji base).
+Malformed input (a stray non-zero-width code point trailing the base) is summed
+rather than under-counted, so it may exceed 2. An empty cluster is 0.
 """.
 -spec width(grapheme()) -> non_neg_integer().
 width(Grapheme) ->
@@ -65,9 +64,9 @@ width(Grapheme) ->
 -doc """
 Total display width, in terminal columns, of a run of text.
 
-Grapheme-cluster aware: the text is split with `string:next_grapheme/1` and each cluster contributes its `width/1`.
-Malformed input is counted best-effort (one column per stray byte) so the
-renderer never crashes on bad encodings.
+Grapheme-cluster aware: the text is split with `string:next_grapheme/1` and each
+cluster contributes its `width/1`. Malformed input is counted best-effort (one
+column per stray byte), so the renderer never crashes on bad encodings.
 """.
 -spec swidth(unicode:chardata()) -> non_neg_integer().
 swidth(Text) ->

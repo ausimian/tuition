@@ -1,32 +1,31 @@
 -module(tuition_tree).
 -moduledoc """
-Tree widget — a collapsible, selectable hierarchy (stateful).
+A collapsible, selectable hierarchy (stateful).
 
-A tree draws a nested node structure one row per visible node, indents each
+A tree draws a nested node structure one row per visible node. It indents each
 row by its depth, marks the expandable ones with an open/closed symbol, and
 scrolls and highlights a selection just as `m:tuition_list` does. It is the
-widget an application/supervision tree is built from — the shape
-every caller previously hand-rolled by flattening a forest into list rows and
-tracking the open nodes itself.
+widget you build an application or supervision tree from: the shape a caller
+would otherwise hand-roll by flattening a forest into list rows and tracking the
+open nodes itself.
 
 ## A tree is a list, once flattened
 
-The only thing a tree adds to a list is *which rows exist*: a node contributes
-a row, and its children follow it — indented — only while it is open. So this
-module owns the flatten (and the indent, guides and symbols that draw it), and
-hands the result to `m:tuition_list`: selection clamping, scroll-offset
-reconciliation, the full-width highlight bar and the per-row clipping are all
-the list's, unchanged. There is one implementation of the `ListState` logic in
-this library and the tree does not fork it.
+The only thing a tree adds to a list is *which rows exist*: a node contributes a
+row, and its children follow it — indented — only while it is open. So this
+module owns the flatten, along with the indent, guides and symbols that draw it,
+and hands the result to `m:tuition_list`. Selection clamping, scroll-offset
+reconciliation, the full-width highlight bar and the per-row clipping are all the
+list's, unchanged. There is one implementation of the `ListState` logic in this
+library, and the tree does not fork it.
 
 ## Stateful, like the list
 
 Selection, scroll offset and the open-node set live in a `#tree_state{}` (see
-`include/tuition_widget.hrl`) held by the *caller* — the renderer is
-immediate-mode and discards every frame, so state kept in the widget would not
-survive (see `m:tuition_widget`). `render/4` takes the state and
-returns it reconciled; navigation and open/close are pure state transitions the
-caller applies to input:
+`include/tuition_widget.hrl`) held by the *caller*, not in this module — the same
+`StatefulWidget` split `m:tuition_list` uses (see `m:tuition_widget` for why it
+has to be explicit). `render/4` takes the state and returns it reconciled.
+Navigation and open/close are pure state transitions the caller applies to input:
 
 ```
 State1 = tuition_tree:next(State0, Nodes), %% on Down
@@ -37,19 +36,23 @@ State2 = tuition_tree:toggle_selected(State1, Nodes), %% on Space
 ## Indices address visible rows; the open set addresses ids
 
 Two different keyings meet in this widget, and the split is deliberate.
-Selection is a *visible-row index*, because that is what the arrow keys move
-through and what the list scrolls; it is reconciled against the live row count
-every frame, so a collapse that shortens the tree under a stale index clamps it
-rather than stranding it. Open/closed is keyed by *node id*, because it must
-outlive the row order — a caller re-rendering live data rebuilds `nodes` every
-frame, and an open set keyed by position would collapse the user's tree the
-moment a node above it appeared or vanished. `selected_id/2` bridges the
-two (index -> id), and `toggle_selected/2` wraps that bridge into the one
-call a Space/Enter binding actually wants.
 
-Because every term is a legitimate id, no function here spends one as a "nothing
-selected" sentinel: `selected_id/2` tags its result `{ok, Id}` so a node
-whose id *is* `none` stays as toggleable as any other.
+Selection is a *visible-row index*, because that is what the arrow keys move
+through and what the list scrolls. It is reconciled against the live row count
+every frame, so a collapse that shortens the tree under a stale index clamps it
+rather than stranding it.
+
+Open/closed is keyed by *node id*, because it has to outlive the row order. A
+caller re-rendering live data rebuilds `nodes` every frame, and an open set keyed
+by position would collapse the user's tree the moment a node above it appeared or
+vanished.
+
+`selected_id/2` bridges the two (index -> id), and `toggle_selected/2` wraps that
+bridge into the one call a Space or Enter binding actually wants.
+
+Every term is a legitimate id, so no function here spends one as a "nothing
+selected" sentinel: `selected_id/2` tags its result `{ok, Id}`, so a node whose id
+*is* `none` stays as toggleable as any other.
 
 ## Nodes
 
@@ -59,18 +62,18 @@ A `nodes` config value is a list of roots, each a map:
 #{id:= term(), label:= unicode:chardata(), children => [tree_node()]}
 ```
 
-`id` is any term, and need only be unique among the nodes the caller wants to
+`id` is any term, and needs to be unique only among the nodes the caller wants to
 open independently. `children` defaults to `[]`; a node with no children is a
 leaf and cannot be opened.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
 - `nodes` — the root nodes (default `[]`).
 - `style` — base style for every row (default: unstyled).
 - `highlight_style` — style overlaid on the selected row, across its full
-  width (default: unstyled — so set at least a colour to make the selection
+  width (default: unstyled, so set at least a colour to make the selection
   visible).
 - `highlight_symbol` — a prefix drawn before the selected row (e.g. `"> "`);
   other rows are indented by its width so the tree lines up (default
@@ -162,26 +165,26 @@ A `#{}` map, every key optional:
 %%% -- state -----------------------------------------------------------
 
 -doc """
-A fresh tree state: nothing selected, unscrolled, every node closed — so a
-tree rendered from it shows its roots alone. A caller that does not want to
-include `tuition_widget.hrl` can start here and drive it through the API.
+A fresh tree state: nothing selected, unscrolled, every node closed, so a tree
+rendered from it shows its roots alone. A caller that would rather not include
+`tuition_widget.hrl` can start here and drive it through the API.
 """.
 -spec new() -> state().
 new() -> #tree_state{}.
 
 -doc """
-Open a node by id, revealing its children on the next render. Opening a
-leaf (or an id not in the tree) is harmless — the flatten only ever consults the
-open set for a node that has children, so the entry simply never applies.
+Open a node by id, revealing its children on the next render. Opening a leaf, or
+an id not in the tree, is harmless: the flatten only ever consults the open set
+for a node that has children, so the entry never applies.
 """.
 -spec open(state(), id()) -> state().
 open(#tree_state{open = Open} = State, Id) ->
     State#tree_state{open = Open#{Id => true}}.
 
 -doc """
-Close a node by id, hiding its children — and, with them, any open state
-*within* them, which is retained rather than discarded: reopening the node
-restores the subtree exactly as the user left it.
+Close a node by id, hiding its children. Any open state *within* those children
+is retained rather than discarded, so reopening the node restores the subtree
+exactly as the user left it.
 """.
 -spec close(state(), id()) -> state().
 close(#tree_state{open = Open} = State, Id) ->
@@ -189,9 +192,9 @@ close(#tree_state{open = Open} = State, Id) ->
 
 -doc """
 Flip a node's open state. Every term is a legitimate id, `none` included, so
-there is no sentinel here to collide with one — a caller acting on the selection
-wants `toggle_selected/2`, which handles the empty tree without borrowing an
-id for the purpose.
+there is no sentinel here to collide with one. A caller acting on the selection
+wants `toggle_selected/2`, which handles the empty tree without borrowing an id
+for the purpose.
 """.
 -spec toggle(state(), id()) -> state().
 toggle(State, Id) ->
@@ -201,10 +204,11 @@ toggle(State, Id) ->
     end.
 
 -doc """
-Flip the open state of the node under the selection — the common binding for
-Space/Enter — or return the state untouched when nothing is selected (an empty
-tree, or an index stranded by a collapse). This is the ergonomic path `toggle/2` deliberately does not offer: it needs no "no selection" id, so it cannot
-mistake a node whose id happens to be `none` for an empty selection.
+Flip the open state of the node under the selection — the usual binding for
+Space or Enter — or return the state untouched when nothing is selected (an
+empty tree, or an index stranded by a collapse). This is the ergonomic path
+`toggle/2` deliberately does not offer: it needs no "no selection" id, so it
+cannot mistake a node whose id happens to be `none` for an empty selection.
 """.
 -spec toggle_selected(state(), [tree_node()]) -> state().
 toggle_selected(State, Nodes) ->
@@ -214,7 +218,7 @@ toggle_selected(State, Nodes) ->
     end.
 
 -doc """
-Whether a node is currently open. Note this reports the *open set*, not
+Whether a node is currently open. Note that this reports the *open set*, not
 whether the node is expandable or on screen: a closed node's open children stay
 open (see `close/2`).
 """.
@@ -227,7 +231,7 @@ is_open(#tree_state{open = Open}, Id) -> maps:is_key(Id, Open).
 Move the selection to the next visible row, clamped to the last. From no
 selection this selects the first row; on an empty tree it stays unselected.
 Takes `Nodes` rather than a row count because the visible extent is not the node
-count — it depends on which nodes are open, which only the flatten knows.
+count: it depends on which nodes are open, and only the flatten knows that.
 """.
 -spec next(state(), [tree_node()]) -> state().
 next(State, Nodes) ->
@@ -252,20 +256,20 @@ select(State, Selected) ->
 
 -doc """
 The selected visible-row index, or `none`. To act on the node it names, use
-`selected_id/2` — an index alone is meaningless once the tree re-flattens.
+`selected_id/2`: an index alone means nothing once the tree re-flattens.
 """.
 -spec selected(state()) -> none | non_neg_integer().
 selected(#tree_state{selected = Selected}) -> Selected.
 
 -doc """
-The id of the node under the selection as `{ok, Id}`, or `none` when nothing
-is selected (an empty tree, or an index stranded by a collapse). This is the bridge
+The id of the node under the selection as `{ok, Id}`, or `none` when nothing is
+selected (an empty tree, or an index stranded by a collapse). This is the bridge
 from the row index the arrow keys move to the node id `toggle/2` takes.
 
-The result is tagged because `t:id/0` is any term — `none` among them — so a
-bare `Id | none` return could not distinguish "nothing is selected" from "the
-selected node's id is `none`", and a caller piping it into `toggle/2` would
-silently fail to toggle that node. `toggle_selected/2` wraps the common case.
+The result is tagged because `t:id/0` is any term — `none` among them. A bare
+`Id | none` return could not tell "nothing is selected" apart from "the selected
+node's id is `none`", and a caller piping it into `toggle/2` would silently fail
+to toggle that node. `toggle_selected/2` wraps the common case.
 """.
 -spec selected_id(state(), [tree_node()]) -> {ok, id()} | none.
 selected_id(State, Nodes) ->
@@ -275,10 +279,10 @@ selected_id(State, Nodes) ->
     end.
 
 -doc """
-The currently-visible rows, in draw order — the tree flattened under the
-open set. Exported so a caller can build navigation this widget does not impose
-(collapse-or-jump-to-parent, expand-or-step-into-child) from the same flatten
-the render uses, rather than re-deriving it and risking a different answer.
+The currently-visible rows, in draw order: the tree flattened under the open set.
+Exported so a caller can build navigation this widget does not impose
+(collapse-or-jump-to-parent, expand-or-step-into-child) from the same flatten the
+render uses, rather than re-deriving it and risking a different answer.
 """.
 -spec visible(state(), [tree_node()]) -> [row()].
 visible(State, Nodes) ->
@@ -395,15 +399,15 @@ child_bars(Bars, _Depth, IsLast) -> Bars ++ [IsLast].
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the visible slice of the tree into `Area`, highlighting the selected
-row, and return the buffer together with the reconciled state (selection clamped
-to the visible-row count, offset adjusted to keep the selection in view). A
-degenerate area draws nothing but still reconciles, so a resize that shrinks a
-pane to nothing and back leaves a valid selection behind.
+Draw the visible slice of the tree into `Area`, highlighting the selected row,
+and return the buffer together with the reconciled state (selection clamped to
+the visible-row count, offset adjusted to keep the selection in view). An empty
+area draws nothing but still reconciles, so a resize that shrinks a pane to
+nothing and back leaves a valid selection behind.
 
 The rows are prefixed here — indent or guides, then the expand symbol — and the
-drawing itself is `tuition_list:render/4`'s, so a tree highlights, scrolls
-and clips exactly as a list does.
+drawing itself is `tuition_list:render/4`'s, so a tree highlights, scrolls and
+clips exactly as a list does.
 """.
 -spec render(tree_cfg(), #rect{}, tuition_render:buffer(), state()) ->
     {tuition_render:buffer(), state()}.

@@ -1,71 +1,73 @@
 -module(tuition_chart).
 -moduledoc """
-Chart widget — time-series trend curves at sub-cell resolution.
+Time-series trend curves at sub-cell resolution.
 
 Where `m:tuition_sparkline` draws one block bar per sample (eight vertical
 levels, one column wide), a chart plots its samples as continuous curves on a
-`m:tuition_braille` grid — 4× the vertical and 2× the horizontal resolution per cell
-— so a BEAM trend (run-queue length, reductions/s, IO throughput over a
-rolling window) reads as a smooth line rather than a staircase. It is
-ratatui's `Chart` drawn with `Marker::Braille`: the dashboard primitive a
-system dashboard's trend panel is built from. It is built on
-`m:tuition_canvas` — a chart is a canvas with time-series semantics (a
-rolling window, value bounds, an optional axis frame) layered on top: each
-dataset lowers to canvas shapes, so both widgets share the one braille plotting
-path rather than each rasterizing by hand.
+`m:tuition_braille` grid. That grid resolves 4× the vertical and 2× the
+horizontal per cell, so a trend (run-queue length, reductions/s, IO throughput
+over a rolling window) reads as a smooth line rather than a staircase. It is
+ratatui's `Chart` drawn with `Marker::Braille`.
+
+It is built on `m:tuition_canvas`: a chart is a canvas with time-series
+semantics — a rolling window, value bounds, an optional axis frame — layered on
+top. Each dataset lowers to canvas shapes, so both widgets share the one braille
+plotting path rather than each rasterizing by hand.
 
 ## Datasets
 
-One or more datasets share the plot, each a series drawn in its own colour as
-a connected `line`, a `scatter` of dots, or a filled `area` (each sample's
+One or more datasets share the plot. Each is a series drawn in its own colour,
+as a connected `line`, a `scatter` of dots, or a filled `area` (each sample's
 column solid from the baseline up to its value). A series is a list of numbers
-sampled over time (as `m:tuition_sparkline`'s is); the value is the y-axis
-and the sample's position in the series the x-axis. Overlaying several series
-(IO in and out, say) puts them on one shared value scale so they are directly
-comparable. A dataset may carry a `name` — used only by the legend (below).
+sampled over time, as `m:tuition_sparkline`'s is: the value is the y-axis, and
+the sample's position in the series is the x-axis. Overlaying several series (IO
+in and out, say) puts them on one shared value scale, so they are directly
+comparable. A dataset may also carry a `name`, which only the legend (below)
+uses.
 
 ## The rolling window
 
-Only the newest samples are plotted — one per sub-pixel column, and the
-sub-pixel width is `2×` the cell width, so at most the newest `2W` samples
-fit. `window` bounds how many of them to show: `auto` (default) uses as many
-of the newest samples as the width holds; an explicit count `N` shows only the
-newest `N` (clamped to the `2W` the width can draw), a fixed-duration window
-that stays the same on-screen span regardless of how much history the caller
-has accumulated. A caller keeps appending to a bounded history and the chart
-shows its tail, scrolling as new samples arrive.
+Only the newest samples are plotted, one per sub-pixel column. The sub-pixel
+width is `2×` the cell width, so at most the newest `2W` samples fit. `window`
+bounds how many of them to show. `auto` (default) uses as many of the newest
+samples as the width holds. An explicit count `N` shows only the newest `N`,
+clamped to the `2W` the width can draw: a fixed-duration window that keeps the
+same on-screen span however much history the caller has accumulated. Keep
+appending to a bounded history and the chart shows its tail, scrolling as new
+samples arrive.
 
-`x_align` fixes where the window sits when it is narrower than the plot (a
-short history, or a `window` count below `2W`): `left` (default) grows the
-curve rightward from the left edge (as `m:tuition_sparkline` does); `right`
-pins the newest sample to the right edge and leaves the left blank until the
-window fills — the live-trend look (newest always hard against the right), and
-the anchoring that keeps multiple series aligned by recency rather than by age.
+`x_align` fixes where the window sits when it is narrower than the plot (a short
+history, or a `window` count below `2W`). `left` (default) grows the curve
+rightward from the left edge, as `m:tuition_sparkline` does. `right` pins the
+newest sample to the right edge and leaves the left blank until the window
+fills: the live-trend look, newest always hard against the right, and the
+anchoring that keeps multiple series aligned by recency rather than by age.
 
 ## Bounds
 
-`y_bounds` is `auto` (default — the min and max across every visible dataset
-map to the bottom and top of the plot) or an explicit `{Min, Max}` held stable
-frame to frame (a metric with a known ceiling, so the curve does not rescale
-under its own noise). A value outside explicit bounds is clamped into the
-plot; a flat series (all one value, or `Min =:= Max`) is drawn along the
-vertical middle rather than dividing by a zero range.
+`y_bounds` is either `auto` or an explicit `{Min, Max}`. With `auto` (the
+default) the min and max across every visible dataset map to the bottom and top
+of the plot. An explicit `{Min, Max}` holds the scale stable frame to frame,
+which suits a metric with a known ceiling: the curve then does not rescale under
+its own noise. A value outside explicit bounds is clamped into the plot. A flat
+series (all one value, or `Min =:= Max`) is drawn along the vertical middle
+rather than dividing by a zero range.
 
 ## One colour per cell (known constraint)
 
-A `m:tuition_braille` cell shares one `fg` across its eight dots, so where
-two datasets light dots in the *same* cell the later-drawn dataset wins that
-cell's colour (its dots merge, but the colour is last-writer-wins) — ratatui's
+A `m:tuition_braille` cell shares one `fg` across its eight dots. So where two
+datasets light dots in the *same* cell, their dots merge but the colour is
+last-writer-wins: the later-drawn dataset takes the cell. This is ratatui's
 canvas layering. Datasets are plotted in list order, so the last dataset wins
-collisions. Where series must never visually collide, give each its own chart
+collisions. Where series must never collide visually, give each its own chart
 tile (stacked by `m:tuition_layout`) rather than overlaying them.
 
 ## Optional axes and labelling
 
 With `axes => true` the widget draws a light box-drawing y-axis and x-axis
 meeting at the origin — the reference frame a bare trend strip lacks — and
-insets the plot to make room. On top of the bare frame, four opt-in keys label
-it (each reserving its own gutter or row, so they compose without overlapping):
+insets the plot to make room. Four opt-in keys then label that frame. Each
+reserves its own gutter or row, so they compose without overlapping:
 
 - `y_ticks` — numeric labels up the y-axis (`auto` derives max/mid/min from
   the bounds, or pass explicit values). Reserves a left gutter as wide as
@@ -78,35 +80,36 @@ it (each reserving its own gutter or row, so they compose without overlapping):
   below the x-labels. All labelling uses `axis_style`.
 
 With none of these set, `axes => true` reserves exactly one left column and one
-bottom row — the bare frame, unchanged. Labelling is meaningless without the
+bottom row: the bare frame, unchanged. Labelling means nothing without the
 frame, so these keys take effect only when `axes => true`.
 
 ## Legend
 
-`legend => #{...}` draws a small boxed key mapping each named dataset's colour
-to its `name`, floated in a corner of the plot. It resets the cells beneath it
-(`m:tuition_clear`) so the curves do not show through, frames them (`m:tuition_block`), and lists one `■ name` row per dataset that carries a `name`
-(unnamed datasets are omitted). `position` picks the corner; `style` colours
-the box (and backs it, so it reads over a busy plot). The legend is independent
-of `axes` — it floats over the plot area either way.
+`legend => #{...}` floats a small boxed key in a corner of the plot, mapping
+each named dataset's colour to its `name`. It resets the cells beneath it
+(`m:tuition_clear`) so the curves do not show through, frames them
+(`m:tuition_block`), and lists one `■ name` row per dataset that carries a
+`name`. Unnamed datasets are omitted. `position` picks the corner; `style`
+colours the box and backs it, so it reads over a busy plot. The legend is
+independent of `axes`: it floats over the plot area either way.
 
 ## Stateless
 
-A chart holds no state between frames: the caller keeps each series' history
-and passes it as config. It implements the plain `m:tuition_widget`
+A chart holds no state between frames. The caller keeps each series' history and
+passes it as config, so this widget implements the plain `m:tuition_widget`
 `render/3` callback.
 
 ## Config
 
-A `#{}` map, every key optional:
+A map, every key optional:
 
-- `datasets` — a list of dataset maps (default `[]` — an empty chart draws
+- `datasets` — a list of dataset maps (default `[]`; an empty chart draws
   only its axes, if enabled). Each dataset:
   - `data` — the series, a list of numbers (default `[]`).
-  - `color` — the dot colour (default `default` — the base foreground).
+  - `color` — the dot colour (default `default`, the base foreground).
   - `marker` — `line` (default; connect consecutive samples),
     `scatter` (a dot per sample), or `area` (fill each sample's column
-    from the baseline up to its value — a filled area/column chart).
+    from the baseline up to its value, giving a filled area/column chart).
   - `name` — chardata naming the series in the legend (default: unnamed,
     so absent from the legend).
 - `y_bounds` — `auto` (default) or an explicit `{Min, Max}`.
@@ -193,7 +196,7 @@ A `#{}` map, every key optional:
 %%% -- render ----------------------------------------------------------
 
 -doc """
-Draw the chart into `Area`. A degenerate area (no columns or rows) draws
+Draw the chart into `Area`. An empty area (no columns or rows) draws
 nothing. See the module doc for the config map.
 """.
 -spec render(chart(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().

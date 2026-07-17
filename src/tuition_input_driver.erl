@@ -1,19 +1,19 @@
 -module(tuition_input_driver).
 -moduledoc """
-Thin driver wiring the terminal seam to the input parser.
+Wires the terminal seam to the input parser.
 
-`m:tuition_input` is a pure, timerless decoder; this module supplies the
-one piece of timing it deliberately leaves out — the bounded read whose
-`timeout` triggers lone-ESC resolution. The `receive... after`
-itself lives in `tuition_term:read/2`; `poll/3` connects a read
-`timeout` to `tuition_input:flush/1`.
+`m:tuition_input` is a pure, timerless decoder. This module supplies the one
+piece of timing it deliberately leaves out: the bounded read whose `timeout`
+triggers lone-ESC resolution. The `receive... after` itself lives in
+`tuition_term:read/2`, and `poll/3` connects a read `timeout` to
+`tuition_input:flush/1`.
 
-It is intentionally minimal: it advances the parser by exactly one bounded
-read and returns the events produced. The full event loop
-owns dispatch, batching and lifecycle; this just proves the timeout path
-end-to-end and gives that loop a single primitive to build on.
+It is intentionally minimal. It advances the parser by exactly one bounded read
+and returns the events produced. The full event loop owns dispatch, batching and
+lifecycle; this just proves the timeout path end-to-end and gives that loop a
+single primitive to build on.
 
-Typical use — call `poll/3` in a loop, threading the parser state:
+Call `poll/3` in a loop, threading the parser state:
 
 ```
 loop(Handle, St0) ->
@@ -37,19 +37,19 @@ loop(Handle, St0) ->
 -doc """
 Advance the parser by one bounded read.
 
-The short `ESC_TIMEOUT` applies only when an ESC-initiated sequence is
-buffered (`tuition_input:awaiting_escape/1`) so a lone `ESC` resolves to
-Escape promptly; otherwise the read uses `IdleTimeout` (the caller's choice of
-how long to wait for fresh input). This matters because the reader is
-byte-at-a-time: a split multi-byte UTF-8 character must NOT be forced onto the
-50ms window, or inter-byte jitter (SSH, a loaded system) would time out
-between its bytes and `flush/1` would corrupt it into replacement characters.
+The short `ESC_TIMEOUT` applies only when an ESC-initiated sequence is buffered
+(`tuition_input:awaiting_escape/1`), so a lone `ESC` resolves to Escape
+promptly. Otherwise the read uses `IdleTimeout`, the caller's choice of how long
+to wait for fresh input. This matters because the reader is byte-at-a-time: a
+split multi-byte UTF-8 character must NOT be forced onto the 50ms window, or
+inter-byte jitter (SSH, a loaded system) would time out between its bytes and
+`flush/1` would corrupt it into replacement characters.
 
-Incoming bytes are decoded via `tuition_input:parse/2`. A read `timeout`
-flushes the buffered partial via `tuition_input:flush/1` ONLY when it is
-an ESC awaiting disambiguation; a non-ESC partial (incomplete UTF-8) is left
-buffered for the next read rather than flushed. Either way the produced events
-(possibly empty) and the advanced state are returned.
+Incoming bytes are decoded via `tuition_input:parse/2`. A read `timeout` flushes
+the buffered partial via `tuition_input:flush/1` ONLY when it is an ESC awaiting
+disambiguation. A non-ESC partial (incomplete UTF-8) stays buffered for the next
+read rather than being flushed. Either way the produced events (possibly empty)
+and the advanced state are returned.
 """.
 -spec poll(tuition_term:handle(), tuition_input:state(), timeout()) ->
     {ok, [tuition_input:event()], tuition_input:state()} | {error, term()}.

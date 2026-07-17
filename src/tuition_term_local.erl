@@ -1,35 +1,35 @@
 -module(tuition_term_local).
 -moduledoc """
-Local tty terminal backend (OTP 28 raw mode).
+The terminal backend for a local tty, using OTP 28 raw mode.
 
-Drives the current terminal via the OTP 28 `io` system. This is the local
-backend: the UI process runs locally and renders to the local tty. It has two
-submodes, chosen automatically at `open/1` time by how the shell
-responds to `shell:start_interactive({noshell, raw})`:
+It drives the current terminal through the OTP 28 `io` system: the UI process
+runs locally and renders to the local tty. There are two submodes, chosen
+automatically at `open/1` time by how the shell responds to
+`shell:start_interactive({noshell, raw})`.
 
 ## Noshell submode (escript / `erl -noshell`)
 
-`shell:start_interactive({noshell, raw})` returns `ok`, putting the tty in
-raw input mode (keys delivered as typed, no echo) *and* raw output mode
-(bytes written verbatim, no ONLCR). Reads/writes/geometry all target the
-`user` device. This is the standalone tool / release path.
+`shell:start_interactive({noshell, raw})` returns `ok`, putting the tty in raw
+input mode (keys delivered as typed, no echo) *and* raw output mode (bytes
+written verbatim, no ONLCR). Reads, writes and geometry all target the `user`
+device. This is the standalone tool / release path.
 
 ## Cooperative submode (launched from a live `iex`/`erl`)
 
 When a shell already owns the tty, `shell:start_interactive({noshell, raw})`
 returns `{error, already_started}`. Rather than refusing, the backend reads
-*cooperatively* through the current shell group: the OS tty is already in raw
+*cooperatively* through the current shell group. The OS tty is already in raw
 *input* mode (`edlin` does line editing in software), so turning `edlin` echo
 off with `io:setopts([{echo, false}])` and reading one byte at a time delivers
-each keystroke immediately, without Enter. Two facts (both validated live on
-OTP 28.3) shape this submode:
+each keystroke immediately, without Enter. Two facts shape this submode, both
+validated live on OTP 28.3:
 
 - Reads MUST target `group_leader()` (the current shell group), NOT
   `user`: `user` is not the current group in a live shell, so
   `io:get_chars(user, …)` returns `{error, enotsup}`. Geometry, writes
   and the opt restore all go to the group leader too.
-- Output stays ONLCR-cooked — `io:setopts([{onlcr, false}])` returns
-  `{error, enotsup}` on a shell group and there is no public way to flip
+- Output stays ONLCR-cooked. `io:setopts([{onlcr, false}])` returns
+  `{error, enotsup}` on a shell group, and there is no public way to flip
   the tty's *output* submode. The renderer addresses the cursor
   absolutely and never emits a bare `\n` (control codepoints are
   sanitised out of cells), so ONLCR is harmless. This path does NOT emit
@@ -42,20 +42,19 @@ i.e. a hard panic-detach the crash guard restores from). Quit is a normal key
 
 ## read/2 timeout contract
 
-`io:get_chars/3` is blocking, but `m:tuition_term` requires a bounded
-`read/2`. A dedicated linked reader process performs the blocking reads and
-forwards bytes to the owner as messages, so `read/2` is a plain
-`receive... after Timeout`.
+`io:get_chars/3` is blocking, but `m:tuition_term` requires a bounded `read/2`.
+A dedicated linked reader process does the blocking reads and forwards bytes to
+the owner as messages, so `read/2` is a plain `receive... after Timeout`.
 
 ## Crash-safe restoration
 
-Alternate-screen, cursor visibility and (cooperative submode) `edlin` echo are
-toggled by us, so restoring them is our responsibility. `close/1`
-restores them on the clean path; a linked guard process restores them if the
-owner dies abnormally, so a host VM that keeps running after the TUI (an
+This backend toggles the alternate screen, cursor visibility and (in the
+cooperative submode) `edlin` echo, so restoring them is its responsibility.
+`close/1` restores them on the clean path. A linked guard process restores them
+if the owner dies abnormally, so a host VM that keeps running after the TUI (an
 embedded release, or a live shell) is left with a pristine prompt. In the
-noshell submode the raw termios state is owned by `prim_tty` and additionally
-restored by the runtime on VM exit.
+noshell submode `prim_tty` owns the raw termios state, and the runtime restores
+it as well on VM exit.
 """.
 -behaviour(tuition_term).
 
