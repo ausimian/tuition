@@ -1,29 +1,28 @@
-%%%-------------------------------------------------------------------
-%%% @doc OTP ssh daemon CLI channel for hosting a tuition shell.
-%%%
-%%% Use this module as the daemon's custom `ssh_cli' callback:
-%%%
-%%% <pre>
-%%% ssh:start(),
-%%% {ok, Daemon} = ssh:daemon(Port, [
-%%%     {system_dir, SystemDir},
-%%%     {user_dir, UserDir},
-%%%     {ssh_cli, {tuition_ssh_cli, [PaneSpecs, ShellOpts]}}
-%%% ]).
-%%% </pre>
-%%%
-%%% `PaneSpecs' is the same non-empty list passed to {@link tuition_shell:start/2}
-%%% locally. The pane modules and {@link tuition_shell} do not learn about SSH;
-%%% this channel callback starts one shell process per SSH shell request and
-%%% injects {@link tuition_term_ssh} as the terminal backend.
-%%%
-%%% The channel process also brokers terminal backend calls because OTP ssh
-%%% delivers input, pty and resize information asynchronously, while
-%%% {@link tuition_term} exposes synchronous `read'/`write'/`size'/`close'
-%%% callbacks.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_ssh_cli).
+-moduledoc """
+OTP ssh daemon CLI channel for hosting a tuition shell.
+
+Use this module as the daemon's custom `ssh_cli` callback:
+
+```
+ssh:start(),
+{ok, Daemon} = ssh:daemon(Port, [
+    {system_dir, SystemDir},
+    {user_dir, UserDir},
+    {ssh_cli, {tuition_ssh_cli, [PaneSpecs, ShellOpts]}}
+]).
+```
+
+`PaneSpecs` is the same non-empty list passed to `tuition_shell:start/2`
+locally. The pane modules and `m:tuition_shell` do not learn about SSH;
+this channel callback starts one shell process per SSH shell request and
+injects `m:tuition_term_ssh` as the terminal backend.
+
+The channel process also brokers terminal backend calls because OTP ssh
+delivers input, pty and resize information asynchronously, while
+`m:tuition_term` exposes synchronous `read`/`write`/`size`/`close`
+callbacks.
+""".
 %% The `ssh_server_channel' behaviour lints our callbacks against OTP `ssh'. It
 %% is a compile-time check only, with no runtime effect. rebar3 compiles with all
 %% of OTP on the code path, so it resolves. Mix scopes the compile path to the
@@ -60,6 +59,7 @@
 
 %%% -- ssh_server_channel callbacks -----------------------------------
 
+-doc false.
 -spec init(term()) -> {ok, state()}.
 init([PaneSpecs]) ->
     init([PaneSpecs, #{}]);
@@ -73,6 +73,7 @@ init([PaneSpecs, ShellOpts | _Extra]) when is_list(PaneSpecs), is_map(ShellOpts)
 init([PaneSpecs | _Extra]) when is_list(PaneSpecs) ->
     init([PaneSpecs, #{}]).
 
+-doc false.
 -spec handle_ssh_msg(term(), state()) -> {ok, state()} | {stop, integer(), state()}.
 handle_ssh_msg(
     {ssh_cm, Cm, {pty, ChannelId, WantReply, {_Term, Width, Height, _PixW, _PixH, _Modes}}},
@@ -118,6 +119,7 @@ handle_ssh_msg({ssh_cm, _Cm, {exit_signal, ChannelId, _Signal, _Error, _Lang}}, 
 handle_ssh_msg(_Msg, State) ->
     {ok, State}.
 
+-doc false.
 -spec handle_msg(term(), state()) -> {ok, state()} | {stop, integer(), state()}.
 handle_msg({ssh_channel_up, ChannelId, Cm}, State) ->
     {ok, State#st{cm = Cm, channel_id = ChannelId}};
@@ -130,6 +132,7 @@ handle_msg({'DOWN', Mon, process, _Pid, Reason}, #st{shell_mon = Mon} = State) -
 handle_msg(_Msg, State) ->
     {ok, State}.
 
+-doc false.
 -spec terminate(term(), state()) -> term().
 terminate(_Reason, #st{shell_pid = undefined}) ->
     ok;

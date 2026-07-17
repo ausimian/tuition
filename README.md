@@ -3,9 +3,7 @@
 A pure-Erlang **terminal UI framework** for the BEAM: a terminal backend seam,
 input parser, diff renderer, layout engine, a ratatui-style widget set, and a
 multi-pane application shell. Reusable by anyone building a BEAM TUI —
-observation or not. It was extracted from the
-[Sonde](https://github.com/ausimian/sonde) BEAM observer, which is its first
-consumer.
+observation or not.
 
 This is a **rebar3-native library** with **zero dependencies beyond OTP**. The
 core UI path uses `kernel`, `stdlib`, and `erts`; optional SSH daemon support
@@ -43,9 +41,9 @@ Mix (`mix.exs`) — Mix builds it with rebar3 (no Elixir added):
 | Module                | Role                                                        |
 |-----------------------|-------------------------------------------------------------|
 | `tuition_term`          | Terminal backend **behaviour** (the pluggable seam).        |
-| `tuition_term_local`    | Local raw-mode tty backend (Modes 1–3).                     |
+| `tuition_term_local`    | Local raw-mode tty backend.                                 |
 | `tuition_ssh_cli`       | OTP `ssh:daemon` custom `ssh_cli` channel for shell sessions. |
-| `tuition_term_ssh`      | SSH channel pty backend used by `tuition_ssh_cli` (Mode 4). |
+| `tuition_term_ssh`      | SSH channel pty backend used by `tuition_ssh_cli`.          |
 | `tuition_caps`          | Terminal capability probing (baseline + runtime probe).     |
 | `tuition_input`         | Input parser — raw byte stream to structured key events.    |
 | `tuition_input_driver`  | Bounded read loop driving the parser (lone-ESC timeout).    |

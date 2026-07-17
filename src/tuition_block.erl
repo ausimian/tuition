@@ -1,48 +1,44 @@
-%%%-------------------------------------------------------------------
-%%% @doc Block widget — the framed region every pane sits in.
-%%%
-%%% A block draws an optional border (any subset of the four sides) with an
-%%% optional title on its top edge, optionally fills its area with a background
-%%% style, and — through {@link inner/2} — hands back the rect *inside* the
-%%% border for its content. It is the ratatui `Block': the frame a `Paragraph',
-%%% `List' or `Table' is rendered into, so the observability panes (PRD §9.1) get
-%%% a consistent bordered chrome.
-%%%
-%%% == Composition ==
-%%% A block and its content are two draws against the same buffer: render the
-%%% block into an `Area', then render the content widget into `inner(Block,
-%%% Area)'. The border occupies the outer ring; the content never overdraws it
-%%% because it is confined to the inner rect. Nesting composes — split the inner
-%%% rect with {@link tuition_layout} and frame each child in its own block.
-%%%
-%%% == Config ==
-%%% A `#{}' map, every key optional:
-%%% <ul>
-%%%   <li>`borders'      — `all' (default), `none', or a list of `top' |
-%%%       `bottom' | `left' | `right'. A corner glyph is drawn only where its two
-%%%       edges are both present.</li>
-%%%   <li>`border_type'  — the line/corner glyph set: `light' (default),
-%%%       `rounded', `double' or `thick'. Purely cosmetic — the per-side subset
-%%%       logic is unchanged, only the glyphs differ.</li>
-%%%   <li>`title'        — chardata drawn on the top edge, truncated to the space
-%%%       between the left/right borders.</li>
-%%%   <li>`title_align'  — `left' (default), `center' or `right'.</li>
-%%%   <li>`title_style'  — the title's style (defaults to `border_style').</li>
-%%%   <li>`border_style' — the border glyphs' style (default: unstyled).</li>
-%%%   <li>`padding'      — interior space between the border and the content, on
-%%%       top of the border inset: `0' (default), a uniform `N', or a
-%%%       `{Top, Right, Bottom, Left}' tuple. Only {@link inner/2} honours it (the
-%%%       border and title are unaffected); it is clamped so the inner rect never
-%%%       goes negative.</li>
-%%%   <li>`style'        — a background fill for the whole area (default: none,
-%%%       so the block is transparent over whatever it is drawn onto).</li>
-%%% </ul>
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_block).
+-moduledoc """
+Block widget — the framed region every pane sits in.
+
+A block draws an optional border (any subset of the four sides) with an
+optional title on its top edge, optionally fills its area with a background
+style, and — through `inner/2` — hands back the rect *inside* the
+border for its content. It is the ratatui `Block`: the frame a `Paragraph`,
+`List` or `Table` is rendered into, so the observability panes get
+a consistent bordered chrome.
+
+## Composition
+
+A block and its content are two draws against the same buffer: render the
+block into an `Area`, then render the content widget into `inner(Block, Area)`. The border occupies the outer ring; the content never overdraws it
+because it is confined to the inner rect. Nesting composes — split the inner
+rect with `m:tuition_layout` and frame each child in its own block.
+
+## Config
+
+A `#{}` map, every key optional:
+
+- `borders` — `all` (default), `none`, or a list of `top` |
+  `bottom` | `left` | `right`. A corner glyph is drawn only where its two
+  edges are both present.
+- `border_type` — the line/corner glyph set: `light` (default),
+  `rounded`, `double` or `thick`. Purely cosmetic — the per-side subset
+  logic is unchanged, only the glyphs differ.
+- `title` — chardata drawn on the top edge, truncated to the space
+  between the left/right borders.
+- `title_align` — `left` (default), `center` or `right`.
+- `title_style` — the title's style (defaults to `border_style`).
+- `border_style` — the border glyphs' style (default: unstyled).
+- `padding` — interior space between the border and the content, on
+  top of the border inset: `0` (default), a uniform `N`, or a
+  `{Top, Right, Bottom, Left}` tuple. Only `inner/2` honours it (the
+  border and title are unaffected); it is clamped so the inner rect never
+  goes negative.
+- `style` — a background fill for the whole area (default: none,
+  so the block is transparent over whatever it is drawn onto).
+""".
 -behaviour(tuition_widget).
 
 -include("tuition_layout.hrl").
@@ -82,8 +78,10 @@
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Draw the block's background, border and title into `Area'. A degenerate
-%% area (no columns or rows) draws nothing. See the module doc for the config map.
+-doc """
+Draw the block's background, border and title into `Area`. A degenerate
+area (no columns or rows) draws nothing. See the module doc for the config map.
+""".
 -spec render(block(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Block, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;
@@ -94,11 +92,13 @@ render(Block, Area, Buf0) ->
     Buf2 = draw_border(Sides, Area, Glyphs, border_style(Block), Buf1),
     draw_title(Block, Sides, Area, Buf2).
 
-%% @doc The content rect inside the block's border: `Area' inset by one cell on
-%% each side that carries a border, then by any `padding' on top. Clamped at
-%% zero, so a block too small for its border and padding (e.g. one row with a top
-%% and bottom border) yields an empty inner rect rather than a negative size —
-%% the content widget then simply draws nothing.
+-doc """
+The content rect inside the block's border: `Area` inset by one cell on
+each side that carries a border, then by any `padding` on top. Clamped at
+zero, so a block too small for its border and padding (e.g. one row with a top
+and bottom border) yields an empty inner rect rather than a negative size —
+the content widget then simply draws nothing.
+""".
 -spec inner(block(), #rect{}) -> #rect{}.
 inner(Block, #rect{x = X, y = Y, w = W, h = H}) ->
     Sides = sides(maps:get(borders, Block, all)),

@@ -1,56 +1,56 @@
-%%%-------------------------------------------------------------------
-%%% @doc Rich styled text — a `line' of styled `span's, ratatui's `Text' model.
-%%%
-%%% The styling model below this module is whole-widget: a {@link tuition_paragraph}
-%%% carries one `style' for its whole block, a {@link tuition_list} row or {@link
-%%% tuition_table} cell is plain chardata drawn in one style. This module adds the
-%%% missing granularity — mixed styles *within* a single line — so an observer can
-%%% colour a status word red, dim a timestamp prefix, or bold a matched substring
-%%% without splitting the text across widgets.
-%%%
-%%% == The model ==
-%%% Three layers, smallest first (ratatui's `Span'/`Line'/`Text'):
-%%% <pre>
-%%%   span() :: {Text :: chardata(), style()}   %% a styled run, one style
-%%%   line() :: [span()]                        %% styled runs, left-to-right
-%%%   text() :: [line()]                         %% lines, top-to-bottom
-%%% </pre>
-%%% `style()' is the same `#{fg,bg,bold,underline}' overlay {@link tuition_render}
-%%% already understands. A span's style is drawn *over* the widget's base style
-%%% (see {@link put_line/6}), so a span that sets only `#{bold => true}' bolds the
-%%% text while keeping the paragraph/row/cell colour underneath.
-%%%
-%%% == Backward compatible ==
-%%% Everywhere a widget accepts styled text it also still accepts plain chardata:
-%%% a bare binary or iolist is exactly one span in the default style. The
-%%% normalisers ({@link line/1}, {@link lines/1}) accept the flexible input a widget
-%%% receives — plain chardata, a lone span, a single line, or a list of lines — and
-%%% return the canonical shape (`[span()]' / `[line()]', span text as a UTF-8
-%%% binary), so a widget written against the canonical form never sees the sugar.
-%%%
-%%% A <em>span</em> is recognised structurally: a `{Text, Style}' pair whose second
-%%% element is a map, or a `#{text := Text}' map. Neither shape is valid chardata
-%%% (chardata is integers, binaries and lists — never a tuple or a bare map), so
-%%% the presence of a span is what tells styled input apart from plain chardata,
-%%% with no ambiguity. To keep the plain path unchanged, <b>multi-line</b> plain
-%%% text is still expressed with embedded `\n' (as {@link tuition_paragraph} always
-%%% has); a list of bare binaries is chardata (concatenated), not a list of lines.
-%%% Multiple lines come from `\n' or from a list whose elements are themselves
-%%% span-carrying lines.
-%%%
-%%% == Rendering ==
-%%% {@link put_line/6} draws a line span by span, measuring each in display columns
-%%% with the same sanitise-aware {@link tuition_widget:display_width/1} /
-%%% {@link tuition_widget:truncate/2} the plain widgets use, and clips the line at
-%%% the area's right edge — so a styled line can no more spill onto a neighbour than
-%%% a plain one can. {@link line_width/1} and {@link truncate_line/2} are the
-%%% measure/clip helpers a widget aligns and wraps styled lines with.
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_text).
+-moduledoc """
+Rich styled text — a `line` of styled `span`s, ratatui's `Text` model.
+
+The styling model below this module is whole-widget: a `m:tuition_paragraph`
+carries one `style` for its whole block, a `m:tuition_list` row or `m:tuition_table` cell is plain chardata drawn in one style. This module adds the
+missing granularity — mixed styles *within* a single line — so an observer can
+colour a status word red, dim a timestamp prefix, or bold a matched substring
+without splitting the text across widgets.
+
+## The model
+
+Three layers, smallest first (ratatui's `Span`/`Line`/`Text`):
+
+```
+span():: {Text:: chardata(), style()} %% a styled run, one style
+line():: [span()] %% styled runs, left-to-right
+text():: [line()] %% lines, top-to-bottom
+```
+
+`style()` is the same `#{fg,bg,bold,underline}` overlay `m:tuition_render`
+already understands. A span's style is drawn *over* the widget's base style
+(see `put_line/6`), so a span that sets only `#{bold => true}` bolds the
+text while keeping the paragraph/row/cell colour underneath.
+
+## Backward compatible
+
+Everywhere a widget accepts styled text it also still accepts plain chardata:
+a bare binary or iolist is exactly one span in the default style. The
+normalisers (`line/1`, `lines/1`) accept the flexible input a widget
+receives — plain chardata, a lone span, a single line, or a list of lines — and
+return the canonical shape (`[span()]` / `[line()]`, span text as a UTF-8
+binary), so a widget written against the canonical form never sees the sugar.
+
+A *span* is recognised structurally: a `{Text, Style}` pair whose second
+element is a map, or a `#{text:= Text}` map. Neither shape is valid chardata
+(chardata is integers, binaries and lists — never a tuple or a bare map), so
+the presence of a span is what tells styled input apart from plain chardata,
+with no ambiguity. To keep the plain path unchanged, **multi-line** plain
+text is still expressed with embedded `\n` (as `m:tuition_paragraph` always
+has); a list of bare binaries is chardata (concatenated), not a list of lines.
+Multiple lines come from `\n` or from a list whose elements are themselves
+span-carrying lines.
+
+## Rendering
+
+`put_line/6` draws a line span by span, measuring each in display columns
+with the same sanitise-aware `tuition_widget:display_width/1` /
+`tuition_widget:truncate/2` the plain widgets use, and clips the line at
+the area's right edge — so a styled line can no more spill onto a neighbour than
+a plain one can. `line_width/1` and `truncate_line/2` are the
+measure/clip helpers a widget aligns and wraps styled lines with.
+""".
 
 -include("tuition_layout.hrl").
 
@@ -85,60 +85,70 @@
 
 %%% -- constructors ----------------------------------------------------
 
-%% @doc A span in the default (unstyled) style — the styled equivalent of a bare
-%% binary. Text is normalised to a UTF-8 binary.
+-doc """
+A span in the default (unstyled) style — the styled equivalent of a bare
+binary. Text is normalised to a UTF-8 binary.
+""".
 -spec span(unicode:chardata()) -> span().
 span(Text) -> span(Text, #{}).
 
-%% @doc A span carrying `Style'. Text is normalised to a UTF-8 binary; the style is
-%% overlaid on the widget's base style at draw time, so setting only some keys
-%% leaves the rest to the base.
+-doc """
+A span carrying `Style`. Text is normalised to a UTF-8 binary; the style is
+overlaid on the widget's base style at draw time, so setting only some keys
+leaves the rest to the base.
+""".
 -spec span(unicode:chardata(), style()) -> span().
 span(Text, Style) -> {to_bin(Text), Style}.
 
 %%% -- normalisation ---------------------------------------------------
 
-%% @doc Normalise one {@type line_input()} to the canonical `[span()]': plain
-%% chardata becomes a single default-styled span, a lone span (either shape) a
-%% one-span line, and a list mixing bare chardata and spans a line of the
-%% corresponding runs. Empty-text spans are dropped, so a normalised line has no
-%% zero-width runs to draw. This is what {@link tuition_list} normalises an item and
-%% {@link tuition_table} a cell through, so both accept a styled line or the plain
-%% chardata they took before.
+-doc """
+Normalise one `t:line_input/0` to the canonical `[span()]`: plain
+chardata becomes a single default-styled span, a lone span (either shape) a
+one-span line, and a list mixing bare chardata and spans a line of the
+corresponding runs. Empty-text spans are dropped, so a normalised line has no
+zero-width runs to draw. This is what `m:tuition_list` normalises an item and
+`m:tuition_table` a cell through, so both accept a styled line or the plain
+chardata they took before.
+""".
 -spec line(line_input()) -> line().
 line(Input) -> drop_empty(to_spans(Input)).
 
-%% @doc Normalise one {@type text_input()} to the canonical `[line()]', splitting on
-%% `\n' (tolerating `\r\n'). Plain chardata splits into lines exactly as {@link
-%% tuition_paragraph} always split it; a `\n' embedded in a span's text likewise
-%% breaks the line, carrying the span's style onto both sides. A wholly empty line
-%% is preserved as `[]' (an empty span list) so a blank line still occupies a row.
-%% This is what {@link tuition_paragraph} normalises its `text' through.
+-doc """
+Normalise one `t:text_input/0` to the canonical `[line()]`, splitting on
+`\n` (tolerating `\r\n`). Plain chardata splits into lines exactly as `m:tuition_paragraph` always split it; a `\n` embedded in a span's text likewise
+breaks the line, carrying the span's style onto both sides. A wholly empty line
+is preserved as `[]` (an empty span list) so a blank line still occupies a row.
+This is what `m:tuition_paragraph` normalises its `text` through.
+""".
 -spec lines(text_input()) -> text().
 lines(Input) ->
     lists:flatmap(fun split_line_nl/1, classify_text(Input)).
 
 %%% -- measurement / clipping ------------------------------------------
 
-%% @doc The display width of a whole line in terminal columns: the sum of its
-%% runs' widths, each measured with the sanitise-aware {@link
-%% tuition_widget:display_width/1} so the total agrees with what {@link put_line/6}
-%% draws (a control byte counts as the one-column blank it becomes, a wide glyph as
-%% two). The line is {@link regroup/1}ed first, so a grapheme cluster split across a
-%% style boundary is measured as the one glyph it renders as rather than double-
-%% counted from each half — keeping the width a widget aligns by in step with what
-%% is drawn. Widgets use it to align a styled line the way they align a plain one.
+-doc """
+The display width of a whole line in terminal columns: the sum of its
+runs' widths, each measured with the sanitise-aware `tuition_widget:display_width/1` so the total agrees with what `put_line/6`
+draws (a control byte counts as the one-column blank it becomes, a wide glyph as
+two). The line is `regroup/1`ed first, so a grapheme cluster split across a
+style boundary is measured as the one glyph it renders as rather than double-
+counted from each half — keeping the width a widget aligns by in step with what
+is drawn. Widgets use it to align a styled line the way they align a plain one.
+""".
 -spec line_width(line()) -> non_neg_integer().
 line_width(Line) ->
     lists:sum([tuition_widget:display_width(Text) || {Text, _Style} <- regroup(Line)]).
 
-%% @doc The longest prefix of `Line' whose display width is at most `MaxCols'
-%% columns, as a line — the line is {@link regroup/1}ed (so a cluster split across a
-%% style boundary stays whole and is never torn at the clip), then clipped run by
-%% run with {@link tuition_widget:truncate/2}, stopping at the first cluster that
-%% would overflow (including a wide glyph with only one column left, dropped whole
-%% as {@link tuition_render} would drop it). The width/truncate helper for styled
-%% lines, and the clip {@link put_line/6} applies before drawing.
+-doc """
+The longest prefix of `Line` whose display width is at most `MaxCols`
+columns, as a line — the line is `regroup/1`ed (so a cluster split across a
+style boundary stays whole and is never torn at the clip), then clipped run by
+run with `tuition_widget:truncate/2`, stopping at the first cluster that
+would overflow (including a wide glyph with only one column left, dropped whole
+as `m:tuition_render` would drop it). The width/truncate helper for styled
+lines, and the clip `put_line/6` applies before drawing.
+""".
 -spec truncate_line(line(), integer()) -> line().
 truncate_line(_Line, MaxCols) when MaxCols =< 0 ->
     [];
@@ -175,19 +185,20 @@ add_span(Bin, Style, Acc) -> [{Bin, Style} | Acc].
 
 %%% -- drawing ---------------------------------------------------------
 
-%% @doc Draw a styled `Line' within `Area', at the `Area'-relative column `DCol'
-%% and row `DRow', clipped to `Area' — the styled sibling of {@link
-%% tuition_widget:put_line/6}. A row outside `[0, H)' or a column outside `[0, W)'
-%% draws nothing, and the line is truncated to the columns remaining to `Area's
-%% right edge (`W - DCol') so it can never spill onto a neighbour. Each span is
-%% drawn with its own style overlaid on `Base' (the widget's base style), so a span
-%% key overrides `Base' and the keys it omits fall through to `Base'.
-%%
-%% A grapheme cluster split across a span boundary (a base in one span, a combining
-%% mark or ZWJ continuation in the next — as substring styling that is not
-%% grapheme-aware can produce) is first stitched back whole, taking its base span's
-%% style, so the trailing mark is never handed to {@link tuition_render} as a lone
-%% zero-width cluster (which it would drop) and thereby lost.
+-doc """
+Draw a styled `Line` within `Area`, at the `Area`-relative column `DCol`
+and row `DRow`, clipped to `Area` — the styled sibling of `tuition_widget:put_line/6`. A row outside `[0, H)` or a column outside `[0, W)`
+draws nothing, and the line is truncated to the columns remaining to `Area`s
+right edge (`W - DCol`) so it can never spill onto a neighbour. Each span is
+drawn with its own style overlaid on `Base` (the widget's base style), so a span
+key overrides `Base` and the keys it omits fall through to `Base`.
+
+A grapheme cluster split across a span boundary (a base in one span, a combining
+mark or ZWJ continuation in the next — as substring styling that is not
+grapheme-aware can produce) is first stitched back whole, taking its base span's
+style, so the trailing mark is never handed to `m:tuition_render` as a lone
+zero-width cluster (which it would drop) and thereby lost.
+""".
 -spec put_line(
     tuition_render:buffer(),
     #rect{},
@@ -219,17 +230,18 @@ draw_spans(Buf, X, Y, [{Text, Style} | Rest], Base) ->
 
 %%% -- grapheme regrouping ---------------------------------------------
 
-%% @doc Re-segment a line's spans on grapheme-cluster boundaries computed across the
-%% whole line, so a cluster split by a style change is stitched back into a single
-%% run and never drawn — or measured, or wrapped — as its parts. Each cluster takes
-%% the style of the span its base (first byte) came from — a cell renders one glyph
-%% in one style, so the base's style is the only sensible choice — and runs of equal
-%% style are coalesced back together. A line of zero or one span has no cross-span
-%% boundary to heal and is returned untouched, which keeps the plain (single-span)
-%% path allocation free. {@link line_width/1}, {@link truncate_line/2} and {@link
-%% put_line/6} apply it themselves; it is exported so {@link tuition_paragraph} can
-%% heal a word before hard-wrapping it, where a cluster torn across two output rows
-%% could not be stitched back afterwards.
+-doc """
+Re-segment a line's spans on grapheme-cluster boundaries computed across the
+whole line, so a cluster split by a style change is stitched back into a single
+run and never drawn — or measured, or wrapped — as its parts. Each cluster takes
+the style of the span its base (first byte) came from — a cell renders one glyph
+in one style, so the base's style is the only sensible choice — and runs of equal
+style are coalesced back together. A line of zero or one span has no cross-span
+boundary to heal and is returned untouched, which keeps the plain (single-span)
+path allocation free. `line_width/1`, `truncate_line/2` and `put_line/6` apply it themselves; it is exported so `m:tuition_paragraph` can
+heal a word before hard-wrapping it, where a cluster torn across two output rows
+could not be stitched back afterwards.
+""".
 -spec regroup(line()) -> line().
 regroup([]) ->
     [];

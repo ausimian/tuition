@@ -1,85 +1,82 @@
-%%%-------------------------------------------------------------------
-%%% @doc BarChart widget — labeled categorical bars (stateless).
-%%%
-%%% A bar chart draws one bar per discrete category, its length proportional to
-%%% the category's value, with the value printed on the bar and a label beside
-%%% (or beneath) it. It is the ratatui `BarChart': where {@link tuition_sparkline}
-%%% packs a whole numeric series into a compact, unlabeled strip, the bar chart is
-%%% the readable view of a handful of *named* quantities — per-scheduler
-%%% utilization, a memory-by-type breakdown, the top-N processes by reductions
-%%% (PRD §9.1).
-%%%
-%%% == Two directions ==
-%%% `vertical' (the default) grows bars upward from a baseline with the labels in
-%%% a row beneath them — the classic column chart, good for a fixed set of
-%%% categories (the schedulers, the memory types). `horizontal' grows bars
-%%% rightward, each on its own row with its label and value inline — good for a
-%%% top-N list where the labels are words, not glyphs, and want the room a whole
-%%% row gives them.
-%%%
-%%% == Sub-cell precision ==
-%%% Bars are drawn with the Unicode eighth-block glyphs so a value that does not
-%%% land on a cell boundary still shows its true length. A vertical bar fills
-%%% bottom-up (U+2581 `▁' up to U+2588 `█', the sparkline's nine-level set); a
-%%% horizontal bar fills left to right (U+258F `▏' up to U+2588, the gauge's set).
-%%% Every glyph is one column in {@link tuition_width}, so the bar's length and the
-%%% renderer's cursor advance agree.
-%%%
-%%% == Scaling ==
-%%% All bars share one scale so their lengths are comparable: `max' maps to the
-%%% full length of a bar — the bar-area height when vertical, the track width when
-%%% horizontal. Pass `max' explicitly when the categories have a known ceiling
-%%% (utilization tops out at 100, a memory breakdown at the node total) so the
-%%% chart's proportions are stable frame to frame; leave it `auto' and the largest
-%%% value fills the length. A value above `max' is clamped to full rather than
-%%% overflowing; a negative value is treated as zero.
-%%%
-%%% == Stateless ==
-%%% A bar chart holds no state between frames: the caller recomputes the bars each
-%%% frame and passes them as config. It implements the plain {@link tuition_widget}
-%%% `render/3' callback.
-%%%
-%%% == Config ==
-%%% A `#{}' map, every key optional:
-%%% <ul>
-%%%   <li>`bars' — the categories, a list of bar maps (default `[]', an empty chart
-%%%       draws nothing). Each bar is itself a `#{}', every key optional:
-%%%     <ul>
-%%%       <li>`value' — the bar's magnitude, a non-negative number (default `0'; a
-%%%           negative value counts as zero length). An integer prints as itself; a
-%%%           float to two decimals.</li>
-%%%       <li>`label' — chardata drawn beneath (vertical) or left of (horizontal)
-%%%           the bar (default: none). A vertical label is clipped to the bar's
-%%%           width, so wide labels want `horizontal'.</li>
-%%%       <li>`text_value' — chardata printed on the bar in place of the formatted
-%%%           `value' (e.g. `"82%"', `"1.2G"'); `none' to print nothing.</li>
-%%%       <li>`style' — the style of this bar's glyphs (default: unstyled — set at
-%%%           least `fg' to colour it).</li>
-%%%     </ul></li>
-%%%   <li>`direction' — `vertical' (default) | `horizontal'.</li>
-%%%   <li>`max' — `auto' (default; the largest bar value — a fractional largest is
-%%%       honoured, so a chart of ratios in `[0, 1]' fills its bars) or an explicit
-%%%       positive number every bar is scaled against. A non-positive or empty
-%%%       scale falls back to 1 to keep the arithmetic well defined.</li>
-%%%   <li>`bar_width' — a bar's thickness: its width in columns when vertical, its
-%%%       height in rows when horizontal (default `1', floored at `1').</li>
-%%%   <li>`bar_gap' — blank cells between adjacent bars (default `1', floored at
-%%%       `0').</li>
-%%%   <li>`label_style' — the labels' style (default: unstyled).</li>
-%%%   <li>`value_style' — the on-bar values' style (default: unstyled — drawn in the
-%%%       default foreground, punched through the bar where they overlap).</li>
-%%% </ul>
-%%%
-%%% Bars are laid in the order given — left to right (vertical) or top to bottom
-%%% (horizontal) — and clipped to `Area': a bar past the far edge is not drawn (the
-%%% chart is truncated, never wrapped). Grouped bars (ratatui's `BarGroup') are a
-%%% later enhancement.
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_barchart).
+-moduledoc """
+BarChart widget — labeled categorical bars (stateless).
+
+A bar chart draws one bar per discrete category, its length proportional to
+the category's value, with the value printed on the bar and a label beside
+(or beneath) it. It is the ratatui `BarChart`: where `m:tuition_sparkline`
+packs a whole numeric series into a compact, unlabeled strip, the bar chart is
+the readable view of a handful of *named* quantities — per-scheduler
+utilization, a memory-by-type breakdown, the top-N processes by reductions.
+
+## Two directions
+
+`vertical` (the default) grows bars upward from a baseline with the labels in
+a row beneath them — the classic column chart, good for a fixed set of
+categories (the schedulers, the memory types). `horizontal` grows bars
+rightward, each on its own row with its label and value inline — good for a
+top-N list where the labels are words, not glyphs, and want the room a whole
+row gives them.
+
+## Sub-cell precision
+
+Bars are drawn with the Unicode eighth-block glyphs so a value that does not
+land on a cell boundary still shows its true length. A vertical bar fills
+bottom-up (U+2581 `▁` up to U+2588 `█`, the sparkline's nine-level set); a
+horizontal bar fills left to right (U+258F `▏` up to U+2588, the gauge's set).
+Every glyph is one column in `m:tuition_width`, so the bar's length and the
+renderer's cursor advance agree.
+
+## Scaling
+
+All bars share one scale so their lengths are comparable: `max` maps to the
+full length of a bar — the bar-area height when vertical, the track width when
+horizontal. Pass `max` explicitly when the categories have a known ceiling
+(utilization tops out at 100, a memory breakdown at the node total) so the
+chart's proportions are stable frame to frame; leave it `auto` and the largest
+value fills the length. A value above `max` is clamped to full rather than
+overflowing; a negative value is treated as zero.
+
+## Stateless
+
+A bar chart holds no state between frames: the caller recomputes the bars each
+frame and passes them as config. It implements the plain `m:tuition_widget`
+`render/3` callback.
+
+## Config
+
+A `#{}` map, every key optional:
+
+- `bars` — the categories, a list of bar maps (default `[]`, an empty chart
+  draws nothing). Each bar is itself a `#{}`, every key optional:
+  - `value` — the bar's magnitude, a non-negative number (default `0`; a
+    negative value counts as zero length). An integer prints as itself; a
+    float to two decimals.
+  - `label` — chardata drawn beneath (vertical) or left of (horizontal)
+    the bar (default: none). A vertical label is clipped to the bar's
+    width, so wide labels want `horizontal`.
+  - `text_value` — chardata printed on the bar in place of the formatted
+    `value` (e.g. `"82%"`, `"1.2G"`); `none` to print nothing.
+  - `style` — the style of this bar's glyphs (default: unstyled — set at
+    least `fg` to colour it).
+- `direction` — `vertical` (default) | `horizontal`.
+- `max` — `auto` (default; the largest bar value — a fractional largest is
+  honoured, so a chart of ratios in `[0, 1]` fills its bars) or an explicit
+  positive number every bar is scaled against. A non-positive or empty
+  scale falls back to 1 to keep the arithmetic well defined.
+- `bar_width` — a bar's thickness: its width in columns when vertical, its
+  height in rows when horizontal (default `1`, floored at `1`).
+- `bar_gap` — blank cells between adjacent bars (default `1`, floored at
+  `0`).
+- `label_style` — the labels' style (default: unstyled).
+- `value_style` — the on-bar values' style (default: unstyled — drawn in the
+  default foreground, punched through the bar where they overlap).
+
+Bars are laid in the order given — left to right (vertical) or top to bottom
+(horizontal) — and clipped to `Area`: a bar past the far edge is not drawn (the
+chart is truncated, never wrapped). Grouped bars (ratatui's `BarGroup`) are a
+later enhancement.
+""".
 -behaviour(tuition_widget).
 
 -include("tuition_layout.hrl").
@@ -111,8 +108,10 @@
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Draw the bar chart into `Area'. A degenerate area (no columns or rows)
-%% draws nothing. See the module doc for the config map.
+-doc """
+Draw the bar chart into `Area`. A degenerate area (no columns or rows)
+draws nothing. See the module doc for the config map.
+""".
 -spec render(barchart(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Cfg, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;

@@ -1,66 +1,64 @@
-%%%-------------------------------------------------------------------
-%%% @doc LineGauge widget — a single-row progress indicator (stateless).
-%%%
-%%% A line gauge draws a label and then a thin horizontal line across the rest of
-%%% one row, the leading fraction of the line drawn `filled' and the remainder
-%%% `unfilled', so a `ratio' in `[0, 1]' reads at a glance in a single cell of
-%%% height. It is the ratatui `LineGauge': the compact sibling of {@link
-%%% tuition_gauge}, for dense dashboards where the full-height bar — which fills
-%%% every row of its area — is too heavy and you want many metrics stacked one per
-%%% line rather than a few thick bars.
-%%%
-%%% == vs. the full gauge ==
-%%% {@link tuition_gauge} fills its whole area with a solid block bar (a taller area
-%%% is a thicker bar) and centres the label over it. A line gauge instead commits to
-%%% one row: label at the left, a one-cell-high line filling the width to its right.
-%%% Give it a one-row rect (the common tile); a taller rect is drawn on its top row
-%%% and the rows below are left untouched, so several line gauges tile compactly
-%%% down a column.
-%%%
-%%% == Whole-cell fill ==
-%%% Like ratatui's `LineGauge' the fill advances a whole cell at a time: the filled
-%%% length is `floor(LineWidth * ratio)' cells drawn in `filled_style', the rest of
-%%% the line in `unfilled_style', both using the same line glyph. There is no
-%%% sub-cell boundary block — the line glyph is a rule, not a solid bar, so it has no
-%%% partial-fill form; the fraction shows through the styling split, not a boundary
-%%% glyph. (The full {@link tuition_gauge} keeps its eighth-block sub-cell precision;
-%%% this widget trades it for the single-row footprint.)
-%%%
-%%% == Stateless ==
-%%% A line gauge holds no state between frames: its `ratio' is recomputed by the
-%%% caller each frame from whatever it is metering and passed in as config, exactly
-%%% as for {@link tuition_gauge}. It implements the plain {@link tuition_widget}
-%%% `render/3' callback — nothing to thread across the immediate-mode rebuild.
-%%%
-%%% == Config ==
-%%% A `#{}' map, every key optional:
-%%% <ul>
-%%%   <li>`ratio' — the fill fraction as a number in `[0.0, 1.0]', clamped to that
-%%%       range (so a metering glitch that overshoots can never draw a line past the
-%%%       area or a negative length). Default `0.0'.</li>
-%%%   <li>`label' — `none' to draw no label (the line then spans the full width), or
-%%%       chardata to draw instead of the default. Absent, the label is the rounded
-%%%       percentage (e.g. `"63%"'). The line begins one blank column after the
-%%%       label.</li>
-%%%   <li>`line' — the line glyph: `thin' (default, `─' U+2500) or `heavy' (`━'
-%%%       U+2501), the ratatui light/thick pair, or custom single-cell chardata used
-%%%       for the whole rule.</li>
-%%%   <li>`filled_style' — the style of the filled leading run (default: unstyled — a
-%%%       default-foreground line; set at least `fg' to colour it).</li>
-%%%   <li>`unfilled_style' — the style of the unfilled trailing run (default:
-%%%       unstyled).</li>
-%%%   <li>`label_style' — the label's style (default: unstyled).</li>
-%%% </ul>
-%%%
-%%% Because filled and unfilled share the line glyph, the fill is legible only when
-%%% `filled_style' and `unfilled_style' differ (a colour, or bold) — matching
-%%% ratatui, where the line set is one symbol and the styles carry the distinction.
-%%%
-%%% HARD CONSTRAINT (PRD §12): depends only on `kernel'/`stdlib'/`erts' plus the
-%%% sibling render/layout/width/widget modules. No third-party code.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_line_gauge).
+-moduledoc """
+LineGauge widget — a single-row progress indicator (stateless).
+
+A line gauge draws a label and then a thin horizontal line across the rest of
+one row, the leading fraction of the line drawn `filled` and the remainder
+`unfilled`, so a `ratio` in `[0, 1]` reads at a glance in a single cell of
+height. It is the ratatui `LineGauge`: the compact sibling of `m:tuition_gauge`, for dense dashboards where the full-height bar — which fills
+every row of its area — is too heavy and you want many metrics stacked one per
+line rather than a few thick bars.
+
+## vs. the full gauge
+
+`m:tuition_gauge` fills its whole area with a solid block bar (a taller area
+is a thicker bar) and centres the label over it. A line gauge instead commits to
+one row: label at the left, a one-cell-high line filling the width to its right.
+Give it a one-row rect (the common tile); a taller rect is drawn on its top row
+and the rows below are left untouched, so several line gauges tile compactly
+down a column.
+
+## Whole-cell fill
+
+Like ratatui's `LineGauge` the fill advances a whole cell at a time: the filled
+length is `floor(LineWidth * ratio)` cells drawn in `filled_style`, the rest of
+the line in `unfilled_style`, both using the same line glyph. There is no
+sub-cell boundary block — the line glyph is a rule, not a solid bar, so it has no
+partial-fill form; the fraction shows through the styling split, not a boundary
+glyph. (The full `m:tuition_gauge` keeps its eighth-block sub-cell precision;
+this widget trades it for the single-row footprint.)
+
+## Stateless
+
+A line gauge holds no state between frames: its `ratio` is recomputed by the
+caller each frame from whatever it is metering and passed in as config, exactly
+as for `m:tuition_gauge`. It implements the plain `m:tuition_widget`
+`render/3` callback — nothing to thread across the immediate-mode rebuild.
+
+## Config
+
+A `#{}` map, every key optional:
+
+- `ratio` — the fill fraction as a number in `[0.0, 1.0]`, clamped to that
+  range (so a metering glitch that overshoots can never draw a line past the
+  area or a negative length). Default `0.0`.
+- `label` — `none` to draw no label (the line then spans the full width), or
+  chardata to draw instead of the default. Absent, the label is the rounded
+  percentage (e.g. `"63%"`). The line begins one blank column after the
+  label.
+- `line` — the line glyph: `thin` (default, `─` U+2500) or `heavy` (`━`
+  U+2501), the ratatui light/thick pair, or custom single-cell chardata used
+  for the whole rule.
+- `filled_style` — the style of the filled leading run (default: unstyled — a
+  default-foreground line; set at least `fg` to colour it).
+- `unfilled_style` — the style of the unfilled trailing run (default:
+  unstyled).
+- `label_style` — the label's style (default: unstyled).
+
+Because filled and unfilled share the line glyph, the fill is legible only when
+`filled_style` and `unfilled_style` differ (a colour, or bold) — matching
+ratatui, where the line set is one symbol and the styles carry the distinction.
+""".
 -behaviour(tuition_widget).
 
 -include("tuition_layout.hrl").
@@ -87,8 +85,10 @@
 
 %%% -- render ----------------------------------------------------------
 
-%% @doc Draw the line gauge into `Area', on its top row. A degenerate area (no
-%% columns or rows) draws nothing. See the module doc for the config map.
+-doc """
+Draw the line gauge into `Area`, on its top row. A degenerate area (no
+columns or rows) draws nothing. See the module doc for the config map.
+""".
 -spec render(line_gauge(), #rect{}, tuition_render:buffer()) -> tuition_render:buffer().
 render(_Cfg, #rect{w = W, h = H}, Buf) when W =< 0; H =< 0 ->
     Buf;

@@ -1,64 +1,66 @@
-%%%-------------------------------------------------------------------
-%%% @doc Input parser — raw byte stream to structured key events.
-%%%
-%%% The local backend's reader ({@link tuition_term_local}) forwards raw input
-%%% bytes verbatim, one small chunk at a time, in latin1 (PRD §8): escape
-%%% sequences and UTF-8 arrive undecoded. This module reassembles those bytes
-%%% into structured {@type event()}s using Erlang binary pattern matching.
-%%%
-%%% == Incremental contract ==
-%%% Bytes may split a multi-byte sequence across reads (the reader emits a byte
-%%% at a time). {@link parse/2} therefore decodes every *complete* sequence it
-%%% can and retains any trailing partial (a lone `ESC', a half-finished CSI, an
-%%% incomplete UTF-8 code point) in the returned {@type state()}, to be
-%%% completed by the bytes of a later {@link parse/2}.
-%%%
-%%% == Lone-ESC disambiguation (PRD §8) ==
-%%% A bare `ESC' (0x1B) is inherently ambiguous: on its own it is the Escape
-%%% key, but it is also the first byte of every CSI/SS3 sequence and of an
-%%% Alt-modified key. {@link parse/2} cannot tell which until it sees (or fails
-%%% to see) the next byte, so a trailing `ESC' stays buffered. The driver reads
-%%% with a bounded timeout ({@link tuition_term:read/2}); when the read times out
-%%% with an `ESC' still buffered, it calls {@link flush/1}, which resolves it to
-%%% an Escape key. Thus `ESC [ A' decodes to Up immediately, while a lone `ESC'
-%%% resolves to Escape only after the inter-byte timeout elapses.
-%%%
-%%% == Alt-prefixed escape sequences (metaSendsEscape, PRD §8) ==
-%%% A terminal in `metaSendsEscape' mode encodes an Alt-modified escape-sequence
-%%% key (Alt+Up, Alt+F5, ...) by prefixing an extra `ESC': Alt+Up arrives as
-%%% `ESC ESC [ A'. {@link parse/2} folds that leading `ESC' into an `alt' modifier
-%%% on the key the trailing sequence decodes to. This is byte-identical to Escape
-%%% followed by that key, so — exactly as for a lone `ESC' — the two are told apart
-%%% by timing: a `metaSendsEscape' burst lands inside the driver's escape window
-%%% and decodes to the Alt chord, whereas a real Escape-then-key has an inter-key
-%%% gap and {@link flush/1} resolves the `ESC' to an Escape first. Only keys are
-%%% prefixed this way: an `ESC' before a non-key sequence — an SGR mouse report or a
-%%% bracketed-paste opener — stays a standalone Escape, followed by that sequence.
-%%% (The mainstream Alt encodings are unaffected too: printable Alt is a single
-%%% `ESC a', and modern terminals send Alt+Up as the CSI modifier form
-%%% `ESC [ 1 ; 3 A'.)
-%%%
-%%% == Mouse & bracketed paste ==
-%%% Two further input-adjacent sources are decoded here, each surfaced only once
-%%% capability probing ({@link tuition_caps}) has enabled the matching terminal mode:
-%%% <ul>
-%%%   <li><b>SGR mouse</b> (`?1006') — `ESC [ < Cb ; Cx ; Cy M|m' becomes a
-%%%       {@type mouse_event()}. The final byte gives press (`M') vs release
-%%%       (`m'); the `Cb' bitfield carries the button, held modifiers and a motion
-%%%       flag; `Cx'/`Cy' are the 1-based column/row.</li>
-%%%   <li><b>Bracketed paste</b> (`?2004') — the bytes between `ESC [ 200 ~' and
-%%%       `ESC [ 201 ~' are <em>literal</em> pasted text and are emitted as a
-%%%       single `{paste, binary()}' event, never re-decoded as keys. A paste can
-%%%       span reads, so the parser holds an "inside paste" buffer in its
-%%%       {@type state()} until the closing bracket arrives.</li>
-%%% </ul>
-%%%
-%%% This module is pure — no processes, no timers — so it is fully testable
-%%% against byte-sequence fixtures. The `receive ... after' timing lives in the
-%%% driver ({@link tuition_input_driver}), keeping decode logic separate from I/O.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(tuition_input).
+-moduledoc """
+Input parser — raw byte stream to structured key events.
+
+The local backend's reader (`m:tuition_term_local`) forwards raw input
+bytes verbatim, one small chunk at a time, in latin1: escape
+sequences and UTF-8 arrive undecoded. This module reassembles those bytes
+into structured `t:event/0`s using Erlang binary pattern matching.
+
+## Incremental contract
+
+Bytes may split a multi-byte sequence across reads (the reader emits a byte
+at a time). `parse/2` therefore decodes every *complete* sequence it
+can and retains any trailing partial (a lone `ESC`, a half-finished CSI, an
+incomplete UTF-8 code point) in the returned `t:state/0`, to be
+completed by the bytes of a later `parse/2`.
+
+## Lone-ESC disambiguation
+
+A bare `ESC` (0x1B) is inherently ambiguous: on its own it is the Escape
+key, but it is also the first byte of every CSI/SS3 sequence and of an
+Alt-modified key. `parse/2` cannot tell which until it sees (or fails
+to see) the next byte, so a trailing `ESC` stays buffered. The driver reads
+with a bounded timeout (`tuition_term:read/2`); when the read times out
+with an `ESC` still buffered, it calls `flush/1`, which resolves it to
+an Escape key. Thus `ESC [ A` decodes to Up immediately, while a lone `ESC`
+resolves to Escape only after the inter-byte timeout elapses.
+
+## Alt-prefixed escape sequences (metaSendsEscape)
+
+A terminal in `metaSendsEscape` mode encodes an Alt-modified escape-sequence
+key (Alt+Up, Alt+F5,...) by prefixing an extra `ESC`: Alt+Up arrives as
+`ESC ESC [ A`. `parse/2` folds that leading `ESC` into an `alt` modifier
+on the key the trailing sequence decodes to. This is byte-identical to Escape
+followed by that key, so — exactly as for a lone `ESC` — the two are told apart
+by timing: a `metaSendsEscape` burst lands inside the driver's escape window
+and decodes to the Alt chord, whereas a real Escape-then-key has an inter-key
+gap and `flush/1` resolves the `ESC` to an Escape first. Only keys are
+prefixed this way: an `ESC` before a non-key sequence — an SGR mouse report or a
+bracketed-paste opener — stays a standalone Escape, followed by that sequence.
+(The mainstream Alt encodings are unaffected too: printable Alt is a single
+`ESC a`, and modern terminals send Alt+Up as the CSI modifier form
+`ESC [ 1; 3 A`.)
+
+## Mouse & bracketed paste
+
+Two further input-adjacent sources are decoded here, each surfaced only once
+capability probing (`m:tuition_caps`) has enabled the matching terminal mode:
+
+- **SGR mouse** (`?1006`) — `ESC [ < Cb; Cx; Cy M|m` becomes a
+  `t:mouse_event/0`. The final byte gives press (`M`) vs release
+  (`m`); the `Cb` bitfield carries the button, held modifiers and a motion
+  flag; `Cx`/`Cy` are the 1-based column/row.
+- **Bracketed paste** (`?2004`) — the bytes between `ESC [ 200 ~` and
+  `ESC [ 201 ~` are *literal* pasted text and are emitted as a
+  single `{paste, binary()}` event, never re-decoded as keys. A paste can
+  span reads, so the parser holds an "inside paste" buffer in its
+  `t:state/0` until the closing bracket arrives.
+
+This module is pure — no processes, no timers — so it is fully testable
+against byte-sequence fixtures. The `receive... after` timing lives in the
+driver (`m:tuition_input_driver`), keeping decode logic separate from I/O.
+""".
 
 -export([new/0, parse/2, flush/1, pending/1, awaiting_escape/1]).
 
@@ -134,30 +136,34 @@
 -spec new() -> state().
 new() -> {input, <<>>}.
 
-%% @doc Whether any incomplete sequence is buffered awaiting more bytes. Inside a
-%% bracketed paste this is always true: the paste is unfinished until its closing
-%% bracket arrives, even with no content buffered yet.
+-doc """
+Whether any incomplete sequence is buffered awaiting more bytes. Inside a
+bracketed paste this is always true: the paste is unfinished until its closing
+bracket arrives, even with no content buffered yet.
+""".
 -spec pending(state()) -> boolean().
 pending({input, <<>>}) -> false;
 pending({input, _}) -> true;
 pending({paste, _}) -> true.
 
-%% @doc Whether the buffered partial is genuinely ESC-ambiguous and so needs the
-%% driver's short inter-byte (escape) timeout to resolve. True for a lone `ESC'
-%% (which must become Escape promptly if nothing follows), an incomplete CSI/SS3
-%% introducer (`ESC ['/`ESC O', which the timeout resolves to Escape plus the
-%% trailing bytes), and their `metaSendsEscape' nested-ESC counterparts — a bare
-%% `ESC ESC' (still able to grow into an Alt+<escape-seq-key> chord) and an
-%% incomplete `ESC ESC ['/`ESC ESC O' — which the timeout resolves to two Escapes,
-%% or to the Alt chord once the sequence completes before it fires.
-%%
-%% Crucially it is FALSE once `ESC' is followed by anything else — in practice a
-%% partial Alt-prefixed multi-byte character (`<<ESC, 16#C3>>' for Alt+é). There
-%% the ESC is already committed to an Alt chord and only the UTF-8 continuation
-%% is outstanding; that is not an escape ambiguity, so it must wait under the
-%% normal read policy. Forcing it onto the short timeout would flush it to a bare
-%% `Escape' plus an unmodified character, dropping the Alt. (Likewise a plain
-%% split UTF-8 character, which never starts with `ESC'.)
+-doc """
+Whether the buffered partial is genuinely ESC-ambiguous and so needs the
+driver's short inter-byte (escape) timeout to resolve. True for a lone `ESC`
+(which must become Escape promptly if nothing follows), an incomplete CSI/SS3
+introducer (`ESC [`/`ESC O`, which the timeout resolves to Escape plus the
+trailing bytes), and their `metaSendsEscape` nested-ESC counterparts — a bare
+`ESC ESC` (still able to grow into an Alt+<escape-seq-key> chord) and an
+incomplete `ESC ESC [`/`ESC ESC O` — which the timeout resolves to two Escapes,
+or to the Alt chord once the sequence completes before it fires.
+
+Crucially it is FALSE once `ESC` is followed by anything else — in practice a
+partial Alt-prefixed multi-byte character (`<<ESC, 16#C3>>` for Alt+é). There
+the ESC is already committed to an Alt chord and only the UTF-8 continuation
+is outstanding; that is not an escape ambiguity, so it must wait under the
+normal read policy. Forcing it onto the short timeout would flush it to a bare
+`Escape` plus an unmodified character, dropping the Alt. (Likewise a plain
+split UTF-8 character, which never starts with `ESC`.)
+""".
 -spec awaiting_escape(state()) -> boolean().
 awaiting_escape({input, <<16#1B>>}) -> true;
 awaiting_escape({input, <<16#1B, $[, _/binary>>}) -> true;
@@ -175,8 +181,10 @@ awaiting_escape({input, _}) -> false;
 %% the short ESC timeout must not apply, or a slow paste would be truncated.
 awaiting_escape({paste, _}) -> false.
 
-%% @doc Decode `Bytes' (appended to any buffered partial) into complete events,
-%% returning them in arrival order plus the state holding any trailing partial.
+-doc """
+Decode `Bytes` (appended to any buffered partial) into complete events,
+returning them in arrival order plus the state holding any trailing partial.
+""".
 -spec parse(binary(), state()) -> {[event()], state()}.
 parse(Bytes, {input, Buf}) ->
     {RevEvents, St} = decode(<<Buf/binary, Bytes/binary>>, []),
@@ -185,11 +193,13 @@ parse(Bytes, {paste, Buf}) ->
     {RevEvents, St} = collect_paste(<<Buf/binary, Bytes/binary>>, []),
     {lists:reverse(RevEvents), St}.
 
-%% @doc Resolve a buffered partial when no more bytes are forthcoming (the
-%% driver's inter-byte read timed out). A leading `ESC' becomes an Escape key
-%% and any bytes that trailed it are re-decoded; a truncated multi-byte UTF-8
-%% code point is emitted as the Unicode replacement character. Idempotent on an
-%% empty buffer.
+-doc """
+Resolve a buffered partial when no more bytes are forthcoming (the
+driver's inter-byte read timed out). A leading `ESC` becomes an Escape key
+and any bytes that trailed it are re-decoded; a truncated multi-byte UTF-8
+code point is emitted as the Unicode replacement character. Idempotent on an
+empty buffer.
+""".
 -spec flush(state()) -> {[event()], state()}.
 flush({input, <<>>}) ->
     {[], {input, <<>>}};
@@ -400,7 +410,7 @@ csi_step(Bin) ->
 
 %% Accumulate parameter (0x30-0x3F) and intermediate (0x20-0x2F) bytes up to the
 %% final byte (0x40-0x7E). Parameters are kept; intermediates are dropped (none
-%% are meaningful for the Phase 0 key set).
+%% are meaningful for the key set).
 -spec split_csi(binary(), binary()) ->
     incomplete | {binary(), byte(), binary()}.
 split_csi(<<C, Rest/binary>>, Params) when C >= 16#30, C =< 16#3F ->
