@@ -33,6 +33,20 @@ defmodule Tuition.MixProject do
       erlc_options: [:debug_info, :warnings_as_errors, {:d, :TUITION_NO_SSH_BEHAVIOUR}],
       deps: deps(),
       description: description(),
+      source_url: @source_url,
+      docs: docs()
+    ]
+  end
+
+  # ExDoc reads the same OTP `-doc`/`-moduledoc` chunks under Mix as `rebar3
+  # ex_doc` does under rebar3 (issue #46), so `mix docs` and `rebar3 ex_doc`
+  # render one shared body of prose. `main: "readme"` lands the README as the
+  # docs home page; the Erlang modules in `src/` and the Elixir facade in `lib/`
+  # both appear, documented from their doc chunks.
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md", "LICENSE"],
       source_url: @source_url
     ]
   end
