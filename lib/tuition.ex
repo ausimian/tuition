@@ -18,9 +18,9 @@ defmodule Tuition do
 
         @impl true
         def render(rect(w: _w) = area, buf, state) do
-          inner = :tuition_block.inner(%{borders: :all, title: "Load"}, area)
-          buf = Block.render(%{borders: :all, title: "Load"}, area, buf)
-          {Gauge.render(%{ratio: state.load}, inner, buf), state}
+          block = %{borders: :all, title: "Load"}
+          buf = Block.render(block, area, buf)
+          {Gauge.render(%{ratio: state.load}, Block.inner(block, area), buf), state}
         end
 
         # ... apply_events/2, sample/1

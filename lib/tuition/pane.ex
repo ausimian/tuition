@@ -15,14 +15,15 @@ defmodule Tuition.Pane do
 
         @impl true
         def render(rect() = area, buf, state) do
+          block = %{borders: :all, title: "Clock"}
           text = :io_lib.format("~p", [state.now])
-          buf = Block.render(%{borders: :all, title: "Clock"}, area, buf)
-          {Paragraph.render(%{lines: [[%{text: text}]]}, area, buf), state}
+          buf = Block.render(block, area, buf)
+          {Paragraph.render(%{text: text}, Block.inner(block, area), buf), state}
         end
 
         @impl true
         def apply_events(events, state) do
-          if Enum.any?(events, &match?({:key, ?q, []}, &1)), do: :quit, else: {:ok, state}
+          if Enum.any?(events, &match?({:key, {:char, ?q}, []}, &1)), do: :quit, else: {:ok, state}
         end
 
         @impl true
