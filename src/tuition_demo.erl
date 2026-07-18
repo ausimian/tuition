@@ -28,6 +28,9 @@ line names the enrichments the terminal reported. Because the probe shares the
 input channel, any non-reply bytes it reads (a key you pressed during the probe
 window) are kept and replayed as the loop's first input rather than lost. So a
 quick `q` against a silent terminal still quits.
+
+For a first pane of your own, start from the [Getting Started](getting_started.md)
+guide, which hosts one through `m:tuition_shell` rather than this bare loop.
 """.
 
 -include("tuition_layout.hrl").

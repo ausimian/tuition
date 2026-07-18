@@ -65,6 +65,10 @@ single-element pane list to run one pane on its own through the same loop.
 The pure pieces — `new/2`, `new/3`, `apply_events/2`, `build_frame/2`,
 `sample/1` and the `active/1` accessor — are exported, so pane switching, key
 routing and resize can be asserted directly over the scripted backend.
+
+The [Getting Started](getting_started.md) guide hosts a first pane here, and
+[The Programming Model](programming_model.md) covers the render/input loop the
+shell runs.
 """.
 
 -include("tuition_layout.hrl").
