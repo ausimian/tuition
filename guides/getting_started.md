@@ -34,9 +34,10 @@ tuition_demo:start().
 ```
 
 It paints a single pane, echoes each key you press into the status line, and
-quits on `q` (or Ctrl-C), restoring the terminal on the way out. It runs
-cooperatively inside a live `erl`/`iex` shell, so you do not need a standalone
-release to try it.
+quits on `q`, restoring the terminal on the way out. It runs cooperatively
+inside a live `erl`/`iex` shell, so you do not need a standalone release to try
+it — and in that shell `q` is the exit, since the runtime keeps Ctrl-C for its
+own interrupt (`tuition_term_local` has the details).
 
 ## Write a pane
 
@@ -89,8 +90,9 @@ tuition_shell:start([{hello_pane, <<"Hello">>}]).
 
 A single-element pane list draws no nav bar, so your pane fills the screen. Give
 the shell more panes and it puts a tab bar across the top and switches between
-them with Tab. Ctrl-C always quits at the shell, so you have a way out even
-before you have bound a key.
+them with Tab. The shell owns those global keys — Tab to switch panes, and, in a
+standalone `escript`/`erl -noshell` run, Ctrl-C to quit — while `q` stays the
+pane-local exit `hello_pane` binds above.
 
 That is a complete, running TUI. From here:
 
