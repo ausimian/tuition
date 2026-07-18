@@ -44,8 +44,10 @@ bracketed-paste opener — stays a standalone Escape, followed by that sequence.
 
 ## Mouse & bracketed paste
 
-Two further input-adjacent sources are decoded here. Each is surfaced only once
-capability probing (`m:tuition_caps`) has enabled the matching terminal mode:
+Two further input-adjacent sources are decoded here. Each reaches the parser
+only once the matching terminal mode is enabled — `m:tuition_caps` probes
+whether the terminal supports it, but enabling it (the DECSET) is the
+application's to write:
 
 - **SGR mouse** (`?1006`) — `ESC [ < Cb; Cx; Cy M|m` becomes a
   `t:mouse_event/0`. The final byte gives press (`M`) vs release (`m`), the

@@ -47,9 +47,11 @@ handle({key, {char, $q}, []}, _State)  -> quit;
 handle(_Other, State)                  -> State.
 ```
 
-Mouse and paste events are only produced once capability probing
-(`tuition_caps`) has enabled the matching terminal modes, so a terminal that
-does not support them simply never emits them.
+Mouse and paste events reach the parser only when the terminal has those modes
+switched on — SGR mouse (`?1006`) and bracketed paste (`?2004`). `tuition_caps`
+probing reports whether the terminal *supports* each; turning a mode on is a
+separate DECSET the application writes, so a stock shell loop sees keys but no
+mouse or paste events until you enable them.
 
 ## The lone-ESC timeout
 
