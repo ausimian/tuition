@@ -60,6 +60,9 @@ capability probing (`m:tuition_caps`) has enabled the matching terminal mode:
 This module is pure — no processes, no timers — so it is fully testable against
 byte-sequence fixtures. The `receive... after` timing lives in the driver
 (`m:tuition_input_driver`), which keeps decode logic separate from I/O.
+
+See the [Handling Input](handling_input.md) guide for the events, the read loop,
+and wiring input into a pane.
 """.
 
 -export([new/0, parse/2, flush/1, pending/1, awaiting_escape/1]).

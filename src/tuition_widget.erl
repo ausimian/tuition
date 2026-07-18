@@ -52,6 +52,9 @@ columns `Area` actually offers before drawing. It measures each grapheme cluster
 the way `m:tuition_render` will render it — a control byte as the blank it
 becomes, a wide glyph as two columns — so the widget's clip and the renderer's
 never disagree.
+
+See the [Building Widgets](building_widgets.md) guide for composing the widget
+set and writing your own.
 """.
 
 -include("tuition_layout.hrl").

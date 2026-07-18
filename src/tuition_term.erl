@@ -11,6 +11,9 @@ backend is in use.
 
 Callers address a backend through an opaque `{Backend, State}` handle. The
 dispatch helpers below hide it from them.
+
+See the [Terminal Backends](terminal_backends.md) guide for the backends that
+implement this seam and how to select one.
 """.
 
 -export([open/2, write/2, read/2, size/1, close/1]).

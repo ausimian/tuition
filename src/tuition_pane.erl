@@ -68,6 +68,10 @@ Ctrl-C to quit) and passes everything else to the focused pane's
 never a printable character, so even a pane capturing every printable key (the
 process view's filter mode) never has a pane switch stolen from under it, and
 never eats one meant for the shell.
+
+The [Getting Started](getting_started.md) guide builds a pane from scratch, and
+[The Programming Model](programming_model.md) covers why the state lives here and
+not in the widgets.
 """.
 
 %% A pane's opaque UI state — its own record, threaded by the shell across frames.
