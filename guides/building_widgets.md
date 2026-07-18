@@ -96,5 +96,7 @@ a focused demo or a captured documentation frame.
 
 Widget configs are already plain maps with atom keys and every stateful widget
 exposes a full function API, so an Elixir consumer wraps nothing. `use Tuition`
-brings the modules into scope under idiomatic aliases (`Block`, `Gauge`, `List`),
-and `Tuition.Pane` authors the hosting pane. See the `Tuition` moduledoc.
+imports the record macros; add `aliases: true` (or a keyword list like
+`aliases: [tuition_gauge: Gauge]`) to bring the modules into scope under
+idiomatic names such as `Block` and `Gauge`. `Tuition.Pane` authors the hosting
+pane. See the `Tuition` moduledoc.
